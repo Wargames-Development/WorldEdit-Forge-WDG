@@ -1,13 +1,13 @@
 [{
     "modid": "WorldEdit",
-    "name": "WorldEdit",
+    "name": "${displayName}",
     "description": "WorldEdit is an easy-to-use in-game world editor for Minecraft, supporting both single player and multiplayer.",
-    "version": "${internalVersion}",
+    "version": "${version}",
     "mcversion": "${mcVersion}",
-    "url": "http://wiki.sk89q.com/wiki/WorldEdit",
+    "url": "https://enginehub.org/worldedit/",
     "updateUrl": "",
     "authors": [ "sk89q", "wizjany", "TomyLobo" ],
-    "credits": "",
+    "credits": "Original WorldEdit project and contributors; Forge 1.7.10 WDG edition maintained by Wargames Development Group.",
     "logoFile": "",
     "screenshots": [],
     "requiredMods": [

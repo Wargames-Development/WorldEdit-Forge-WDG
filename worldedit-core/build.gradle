@@ -1,5 +1,6 @@
 apply plugin: 'eclipse'
-apply plugin: 'idea'
+
+archivesBaseName = 'WorldEdit-Core-WDG'
 
 dependencies {
     compile 'de.schlichtherle:truezip:6.8.3'
@@ -11,7 +12,6 @@ dependencies {
     compile 'com.thoughtworks.paranamer:paranamer:2.6'
     compile 'com.google.code.gson:gson:2.2.4'
     compile 'com.sk89q.lib:jlibnoise:1.0.0'
-    //compile 'net.sf.trove4j:trove4j:3.0.3'
     testCompile 'org.mockito:mockito-core:1.9.0-rc1'
 }
 
@@ -27,4 +27,14 @@ sourceSets {
     }
 }
 
-build.dependsOn(shadowJar)
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'WorldEdit Core WDG Edition',
+                'Implementation-Version': project.version,
+                'WorldEdit-Git-Commit': rootProject.gitCommitHash
+        )
+    }
+}
+
+build.dependsOn shadowJar

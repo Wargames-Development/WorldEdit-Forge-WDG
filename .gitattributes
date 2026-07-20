@@ -1,1 +1,40 @@
-*.java   diff=java
+# Detect text files by default without forcing a repository-wide rewrite.
+* text=auto
+
+# WDG-maintained build and documentation files use LF.
+*.gradle     text eol=lf
+*.properties text eol=lf
+*.json       text eol=lf
+*.md         text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.sh         text eol=lf
+gradlew      text eol=lf
+
+# Preserve historical upstream line endings in the legacy source tree.
+# Normalising these files would create a large source-only diff unrelated to
+# the repository foundation work.
+worldedit-core/src/**/*.java  -text diff=java
+worldedit-forge/src/**/*.java -text diff=java
+worldedit-core/src/**/*.xml   -text
+worldedit-forge/src/**/*.xml  -text
+CHANGELOG.txt                 -text
+LICENSE.txt                   -text
+config/checkstyle/checkstyle.xml -text
+
+# Windows launchers use CRLF.
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+
+# Binary files.
+*.jar        binary
+*.zip        binary
+*.gz         binary
+*.7z         binary
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.ico        binary
+*.pdf        binary
+*.class      binary

@@ -1,79 +1,220 @@
 buildscript {
+    configurations.all {
+        resolutionStrategy {
+            // Match the ASM generation forced for the parent Shadow plugin.
+            // SpecialSource 1.11.1 is compiled against ASM 9.4.
+            force 'org.ow2.asm:asm:9.4'
+            force 'org.ow2.asm:asm-commons:9.4'
+            force 'org.ow2.asm:asm-tree:9.4'
+        }
+    }
+
     repositories {
         mavenCentral()
-        maven { url = "http://files.minecraftforge.net/maven" }
-        maven { url = "https://oss.sonatype.org/content/repositories/snapshots/" }
-        jcenter()
+        maven {
+            name = 'Forge'
+            url = 'https://maven.minecraftforge.net/'
+        }
     }
 
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:1.2-SNAPSHOT'
+        classpath 'com.anatawa12.forge:ForgeGradle:1.2-1.1.1'
     }
 }
 
 apply plugin: 'forge'
 
+// ForgeGradle 1.2 applies legacy Java 6 defaults when the Forge plugin is
+// configured. Reassert the repository-wide Java 8 target after the plugin so
+// the effective compiler settings remain Java 8 for this module.
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+tasks.withType(JavaCompile) {
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+}
+
+archivesBaseName = rootProject.jarBaseName
+
 repositories {
     maven {
-        name 'forge'
-        url 'http://files.minecraftforge.net/maven/'
+        name = 'Forge'
+        url = 'https://maven.minecraftforge.net/'
     }
 }
 
 dependencies {
     compile project(':worldedit-core')
-    compile group: 'codechicken', name: 'ForgeMultipart', version: '1.7.10-1.2.0.345', classifier: 'dev'
+    // ForgeMultipart support is optional at runtime. Keep its API available for
+    // compilation without injecting the mod (and its CodeChickenLib runtime)
+    // into every WorldEdit development client/server launch.
+    compileOnly group: 'codechicken', name: 'ForgeMultipart', version: '1.7.10-1.2.0.345', classifier: 'dev'
     testCompile group: 'org.mockito', name: 'mockito-core', version: '1.9.0-rc1'
 }
 
 minecraft {
-    ext.forgeVersion = "10.13.4.1614-1.7.10"
-    version = "1.7.10-$forgeVersion"
+    version = rootProject.forgeGradleVersion
+    runDir = 'eclipse'
 
-    replaceIn "com/sk89q/worldedit/forge/ForgeWorldEdit.java"
-    replace "%VERSION%", project.version
+    replaceIn 'com/sk89q/worldedit/forge/ForgeWorldEdit.java'
+    replace '%VERSION%', project.version
 }
 
-project.archivesBaseName = "${project.archivesBaseName}-mc${minecraft.version}"
-
 processResources {
-    from (sourceSets.main.resources.srcDirs) {
-        expand 'version': project.version,
-                'mcVersion': project.minecraft.version, 
-                'forgeVersion': project.minecraft.forgeVersion,
-                'internalVersion': project.internalVersion
+    inputs.property 'version', project.version
+    inputs.property 'mcVersion', rootProject.minecraftVersion
+    inputs.property 'forgeVersion', rootProject.forgeVersion
+    inputs.property 'displayName', rootProject.modDisplayName
+    inputs.property 'internalVersion', rootProject.internalVersion
+
+    from(sourceSets.main.resources.srcDirs) {
         include 'mcmod.info'
+        expand(
+                version: project.version,
+                mcVersion: rootProject.minecraftVersion,
+                forgeVersion: rootProject.forgeVersion,
+                displayName: rootProject.modDisplayName,
+                internalVersion: rootProject.internalVersion
+        )
     }
 
-    from (sourceSets.main.resources.srcDirs) {
+    from(sourceSets.main.resources.srcDirs) {
         exclude 'mcmod.info'
     }
 }
 
 jar {
+    classifier = 'unshaded-dev'
     manifest {
-        attributes("Class-Path": "truezip.jar WorldEdit/truezip.jar js.jar WorldEdit/js.jar",
-                   "WorldEdit-Version": version)
+        attributes(
+                'Class-Path': 'truezip.jar WorldEdit/truezip.jar js.jar WorldEdit/js.jar',
+                'Implementation-Title': 'WorldEdit Forge WDG Edition',
+                'Implementation-Version': project.version,
+                'WorldEdit-Version': project.version,
+                'WorldEdit-Internal-Version': rootProject.internalVersion,
+                'WorldEdit-Git-Commit': rootProject.gitCommitHash,
+                'Minecraft-Version': rootProject.minecraftVersion,
+                'Forge-Version': rootProject.forgeVersion
+        )
     }
 }
 
 shadowJar {
+    classifier = 'dist'
+    manifest {
+        from project.tasks.jar.manifest
+    }
     dependencies {
         include(dependency(':worldedit-core'))
     }
 }
 
 reobf.reobf(shadowJar) { spec ->
-    spec.classpath = sourceSets.main.compileClasspath;
+    spec.classpath = sourceSets.main.compileClasspath
 }
 
 task deobfJar(type: Jar) {
     from sourceSets.main.output
     classifier = 'dev'
+    manifest {
+        from project.tasks.jar.manifest
+    }
+}
+
+task verifyReobfToolchain {
+    group = 'verification'
+    description = 'Checks that ForgeGradle SpecialSource and Shadow share the ASM 9.4 runtime.'
+
+    doLast {
+        Class specialSourceClass = net.md_5.specialsource.JarRemapper.class
+        ClassLoader reobfLoader = specialSourceClass.classLoader
+        Class asmOpcodesClass = Class.forName('org.objectweb.asm.Opcodes', false, reobfLoader)
+        Class asmClassReaderClass = Class.forName('org.objectweb.asm.ClassReader', false, reobfLoader)
+
+        boolean hasAsm9Api = asmOpcodesClass.fields.any { it.name == 'ASM9' }
+        def asmCodeSource = asmClassReaderClass.protectionDomain?.codeSource?.location
+        def specialSourceCodeSource = specialSourceClass.protectionDomain?.codeSource?.location
+        String asmLocation = asmCodeSource == null ? 'unknown' : asmCodeSource.toString()
+        String specialSourceLocation = specialSourceCodeSource == null ? 'unknown' : specialSourceCodeSource.toString()
+
+        if (!hasAsm9Api || !(asmLocation.contains('/asm/9.4/') || asmLocation.contains('asm-9.4.jar'))) {
+            throw new GradleException('Forge reobfuscation loaded an incompatible ASM runtime: ' + asmLocation)
+        }
+        if (!(specialSourceLocation.contains('/SpecialSource/1.11.1/') ||
+                specialSourceLocation.contains('SpecialSource-1.11.1.jar'))) {
+            throw new GradleException('Unexpected SpecialSource runtime: ' + specialSourceLocation)
+        }
+
+        println 'Reobf toolchain verified: SpecialSource 1.11.1 with ASM 9.4'
+    }
+}
+
+tasks.reobf.dependsOn verifyReobfToolchain
+
+
+task verifyOptionalIntegrationClasspath {
+    group = 'verification'
+    description = 'Checks that optional ForgeMultipart APIs compile without loading ForgeMultipart in development runs.'
+
+    doLast {
+        List<String> compileNames = sourceSets.main.compileClasspath.files.collect { it.name }.sort()
+        List<String> runtimeNames = sourceSets.main.runtimeClasspath.files.collect { it.name }.sort()
+
+        if (!compileNames.any { it == 'ForgeMultipart-1.7.10-1.2.0.345-dev.jar' }) {
+            throw new GradleException('ForgeMultipart development API is missing from the compile classpath')
+        }
+
+        List<String> leakedRuntimeArtifacts = runtimeNames.findAll { String name ->
+            name.startsWith('ForgeMultipart-') ||
+                    name.startsWith('CodeChickenLib-') ||
+                    name.startsWith('CodeChickenCore-')
+        }
+        if (!leakedRuntimeArtifacts.isEmpty()) {
+            throw new GradleException('Optional multipart dependencies leaked into the development runtime: ' +
+                    leakedRuntimeArtifacts)
+        }
+
+        println 'Optional integration classpath verified: ForgeMultipart compile-only, clean development runtime'
+    }
+}
+
+tasks.matching { it.name == 'runClient' || it.name == 'runServer' }.all { Task runTask ->
+    runTask.dependsOn verifyOptionalIntegrationClasspath
+}
+
+task verifyProcessedResources(dependsOn: processResources) {
+    group = 'verification'
+    description = 'Checks generated Forge metadata for unresolved build tokens.'
+    doLast {
+        File generatedMetadata = file("${buildDir}/resources/main/mcmod.info")
+        if (!generatedMetadata.isFile()) {
+            throw new GradleException("Generated mcmod.info is missing: ${generatedMetadata}")
+        }
+
+        String metadata = generatedMetadata.getText('UTF-8')
+        if (metadata =~ /\$\{[^}]+\}|%VERSION%|@VERSION@/) {
+            throw new GradleException('Generated mcmod.info contains an unresolved build token')
+        }
+        if (!metadata.contains('"modid": "WorldEdit"')) {
+            throw new GradleException('Generated mcmod.info changed the WorldEdit identifier')
+        }
+        if (!metadata.contains('"name": "' + rootProject.modDisplayName + '"')) {
+            throw new GradleException("Generated mcmod.info does not contain display name ${rootProject.modDisplayName}")
+        }
+        if (!metadata.contains('"version": "' + project.version + '"')) {
+            throw new GradleException("Generated mcmod.info does not contain version ${project.version}")
+        }
+    }
 }
 
 artifacts {
     archives deobfJar
 }
 
-build.dependsOn(shadowJar)
+build.dependsOn shadowJar
+build.dependsOn verifyProcessedResources
+
+tasks.matching { it.name == 'reobfShadowJar' }.all { reobfTask ->
+    build.dependsOn reobfTask
+}

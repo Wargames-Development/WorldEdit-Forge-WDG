@@ -1,75 +1,144 @@
+import java.util.Properties
+
 println """
 *******************************************
- You are building WorldEdit! 
+ WorldEdit Forge WDG Edition
+ Minecraft 1.7.10 / Forge 10.13.4.1614
 
- If you encounter trouble:
- 1) Read COMPILING.md if you haven't yet
- 2) Try running 'build' in a separate Gradle run
- 3) Use gradlew and not gradle
- 4) If you still need help, ask on IRC! irc.esper.net #sk89q
-
- Output files will be in [subproject]/build/libs
+ Read SETUP.md and COMPILING.md before building.
+ Output files are written to [subproject]/build/libs.
 *******************************************
 """
 
 buildscript {
     repositories {
         mavenCentral()
-        maven { url = "https://oss.sonatype.org/content/repositories/snapshots/" }
-        jcenter()
+        maven { url = 'https://plugins.gradle.org/m2/' }
     }
 
     configurations.all {
         resolutionStrategy {
             force 'com.google.guava:guava:17.0'
+
+            // Shadow 1.2.4 normally contributes ASM 5.0.3 to the parent
+            // build-script classloader. ForgeGradle 1.2-1.1.1 uses the
+            // SpecialSource fork compiled for ASM 9.4. Keep one compatible
+            // ASM generation across both tools so reobfuscation does not load
+            // SpecialSource against Shadow's older ClassVisitor classes.
+            force 'org.ow2.asm:asm:9.4'
+            force 'org.ow2.asm:asm-commons:9.4'
+            force 'org.ow2.asm:asm-tree:9.4'
         }
     }
 
     dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.0'
-        classpath 'org.jfrog.buildinfo:build-info-extractor-gradle:3.0.1'
-        classpath 'org.ajoberstar:gradle-git:0.12.0'
+        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.4'
     }
 }
 
-if (!project.hasProperty("artifactory_contextUrl")) ext.artifactory_contextUrl = "http://localhost"
-if (!project.hasProperty("artifactory_user")) ext.artifactory_user = "guest"
-if (!project.hasProperty("artifactory_password")) ext.artifactory_password = ""
 
-if (!project.hasProperty("gitCommitHash")) {
-    try {
-        def repo = Grgit.open(project.file('.'))
-        ext.gitCommitHash = repo.head().abbreviatedId
-    } catch (Exception e) {
-        ext.gitCommitHash = "no_git_id"
+// Generate one complete IntelliJ project from the multi-module repository.
+// Without the root IDEA plugin, Gradle only writes the module .iml files and
+// cannot create WorldEdit-Forge-WDG.ipr/.iws.
+apply plugin: 'idea'
+
+idea {
+    project {
+        // The IDEA project name is derived from settings.gradle and the .ipr
+        // output filename. IdeaProject.name is read-only in Gradle 4.5.
+        jdkName = '1.8'
+        languageLevel = '1.8'
     }
+}
+
+ext.minecraftVersion = '1.7.10'
+ext.forgeVersion = '10.13.4.1614'
+ext.forgeGradleVersion = "${minecraftVersion}-${forgeVersion}-${minecraftVersion}"
+
+File gradlePropertiesFile = file('gradle.properties')
+Properties persistedProperties = new Properties()
+gradlePropertiesFile.withInputStream { persistedProperties.load(it) }
+
+int currentBuildNumber = (persistedProperties.getProperty('modBuildNumber') ?: '0').toInteger()
+List<String> requestedTasks = gradle.startParameter.taskNames.collect { it.toLowerCase(Locale.ENGLISH) }
+Set<String> releaseTaskNames = ['build', 'assemble', 'jar', 'shadowjar', 'reobfshadowjar'] as Set
+boolean releaseBuildRequested = requestedTasks.any { String taskPath ->
+    String taskName = taskPath.tokenize(':').last()
+    releaseTaskNames.contains(taskName)
+}
+
+ext.effectiveBuildNumber = releaseBuildRequested ? currentBuildNumber + 1 : currentBuildNumber
+ext.baseModVersion = "${modMainVersion}.${modSubVersion}.${modPatchVersion}_X${effectiveBuildNumber}"
+
+String requestedBranch = project.hasProperty('branch') ? String.valueOf(project.property('branch')).trim() : ''
+String safeBranch = requestedBranch.replaceAll('[^A-Za-z0-9._-]+', '-').replaceAll('^-+|-+$', '')
+ext.branchSuffix = safeBranch ? "-${safeBranch}" : ''
+ext.modVersionString = "${baseModVersion}${branchSuffix}"
+
+def resolveGitCommit = {
+    ByteArrayOutputStream output = new ByteArrayOutputStream()
+    try {
+        def result = exec {
+            workingDir rootDir
+            commandLine 'git', 'rev-parse', '--short=12', 'HEAD'
+            standardOutput = output
+            errorOutput = new ByteArrayOutputStream()
+            ignoreExitValue = true
+        }
+        String value = output.toString('UTF-8').trim()
+        return result.exitValue == 0 && value ? value : 'no_git_id'
+    } catch (Exception ignored) {
+        return 'no_git_id'
+    }
+}
+
+ext.gitCommitHash = resolveGitCommit()
+ext.internalVersion = "${modVersionString};${gitCommitHash}"
+
+group = 'com.sk89q.worldedit'
+version = modVersionString
+
+allprojects {
+    group = rootProject.group
+    version = rootProject.version
 }
 
 subprojects {
     apply plugin: 'java'
+    apply plugin: 'idea'
     apply plugin: 'maven'
     apply plugin: 'checkstyle'
     apply plugin: 'com.github.johnrengelman.shadow'
-    apply plugin: 'com.jfrog.artifactory-upload'
 
-    group = 'com.sk89q.worldedit'
-    version = '6.1.2-SNAPSHOT'
-    ext.internalVersion = version + ";" + gitCommitHash
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
 
-    sourceCompatibility = 1.6
-    targetCompatibility = 1.6
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+    }
 
-    checkstyle.configFile = new File(rootProject.projectDir, "config/checkstyle/checkstyle.xml")
+    checkstyle {
+        // The original Gradle 2.0 build used Checkstyle 5.7. Pin that version
+        // so the legacy WorldEdit rules are not silently reinterpreted by
+        // Gradle 4.5's newer Checkstyle 6.19 default.
+        toolVersion = '5.7'
+        configFile = new File(rootProject.projectDir, 'config/checkstyle/checkstyle.xml')
+        configProperties = [basedir: rootProject.projectDir.absolutePath]
+    }
 
     repositories {
+        maven {
+            name = 'Forge'
+            url = 'https://maven.minecraftforge.net/'
+        }
+        maven {
+            name = 'EngineHub'
+            url = 'https://maven.enginehub.org/repo/'
+        }
         mavenCentral()
-        maven { url "http://repo.bukkit.org/content/groups/public" }
-        maven { url "http://maven.sk89q.com/repo/" }
-        maven { url "http://repo.maven.apache.org/maven2" }
     }
 
     if (JavaVersion.current().isJava8Compatible()) {
-        // Java 8 turns on doclint which we fail
         tasks.withType(Javadoc) {
             options.addStringOption('Xdoclint:none', '-quiet')
         }
@@ -91,13 +160,13 @@ subprojects {
         archives javadocJar
     }
 
-    build.dependsOn(checkstyleMain)
-    build.dependsOn(checkstyleTest)
-    build.dependsOn(sourcesJar)
-    build.dependsOn(javadocJar)
+    build.dependsOn checkstyleMain
+    build.dependsOn checkstyleTest
+    build.dependsOn sourcesJar
+    build.dependsOn javadocJar
 
     shadowJar {
-        classifier 'dist'
+        classifier = 'dist'
         dependencies {
             include(dependency('com.sk89q:jchronic:0.2.4a'))
             include(dependency('com.thoughtworks.paranamer:paranamer:2.6'))
@@ -107,26 +176,199 @@ subprojects {
         exclude '.cache'
         exclude 'LICENSE*'
     }
+}
 
-    artifactory {
-        contextUrl = "${artifactory_contextUrl}"
-        publish {
-            repository {
-                repoKey = project.version.contains("SNAPSHOT") ? 'libs-snapshot-local' : 'libs-release-local'
-                username = "${artifactory_user}"
-                password = "${artifactory_password}"
-                maven = true
-                
+task printBuildVersion {
+    group = 'help'
+    description = 'Prints the resolved WDG version for this Gradle invocation.'
+    doLast {
+        println "WorldEdit Forge WDG version: ${modVersionString}"
+        println "Internal build identifier: ${internalVersion}"
+    }
+}
+
+task verifyRepository {
+    group = 'verification'
+    description = 'Checks the bounded WorldEdit Forge WDG repository foundation.'
+    dependsOn ':worldedit-forge:verifyProcessedResources'
+    dependsOn ':worldedit-forge:verifyReobfToolchain'
+    dependsOn ':worldedit-forge:verifyOptionalIntegrationClasspath'
+
+    doLast {
+        List<String> requiredFiles = [
+                'build.gradle',
+                'settings.gradle',
+                'gradle.properties',
+                'gradlew',
+                'gradlew.bat',
+                'gradle/wrapper/gradle-wrapper.jar',
+                'gradle/wrapper/gradle-wrapper.properties',
+                '.gitignore',
+                '.gitattributes',
+                'README.md',
+                'COMPILING.md',
+                'CONTRIBUTING.md',
+                'SETUP.md',
+                'worldedit-core/build.gradle',
+                'worldedit-forge/build.gradle',
+                'worldedit-forge/src/main/resources/mcmod.info'
+        ]
+        requiredFiles.each { String path ->
+            if (!file(path).isFile()) {
+                throw new GradleException("Required repository file is missing: ${path}")
             }
         }
 
-        resolve {
-            repository {
-                repoKey = 'repo'
-                username = "${artifactory_user}"
-                password = "${artifactory_password}"
-                maven = true
+        List<String> moduleNames = subprojects.collect { it.name }.sort()
+        if (moduleNames != ['worldedit-core', 'worldedit-forge']) {
+            throw new GradleException("Expected exactly worldedit-core and worldedit-forge, found: ${moduleNames}")
+        }
+
+        if (!plugins.hasPlugin('idea') || tasks.findByName('idea') == null ||
+                tasks.findByName('ideaProject') == null || tasks.findByName('ideaWorkspace') == null) {
+            throw new GradleException('The root IDEA plugin must generate the repository .ipr and .iws files')
+        }
+        subprojects.each { Project module ->
+            if (!module.plugins.hasPlugin('idea') || module.tasks.findByName('ideaModule') == null) {
+                throw new GradleException("${module.path} is not configured to generate an IntelliJ module")
             }
+        }
+
+        subprojects.each { Project module ->
+            String configuredSource = module.sourceCompatibility.toString()
+            String configuredTarget = module.targetCompatibility.toString()
+            if (configuredSource != JavaVersion.VERSION_1_8.toString() ||
+                    configuredTarget != JavaVersion.VERSION_1_8.toString()) {
+                throw new GradleException("${module.path} is not configured for Java 8 " +
+                        "(source=${configuredSource}, target=${configuredTarget})")
+            }
+
+            module.tasks.withType(JavaCompile).findAll {
+                it.name == 'compileJava' || it.name == 'compileTestJava'
+            }.each { JavaCompile compileTask ->
+                if (compileTask.sourceCompatibility != '1.8' || compileTask.targetCompatibility != '1.8') {
+                    throw new GradleException("${compileTask.path} is not configured for Java 8 " +
+                            "(source=${compileTask.sourceCompatibility}, target=${compileTask.targetCompatibility})")
+                }
+            }
+
+            if (module.version.toString() != rootProject.version.toString()) {
+                throw new GradleException("${module.path} does not share the root version")
+            }
+        }
+
+        if (minecraftVersion != '1.7.10') {
+            throw new GradleException("Minecraft version changed unexpectedly: ${minecraftVersion}")
+        }
+        if (forgeVersion != '10.13.4.1614') {
+            throw new GradleException("Forge version changed unexpectedly: ${forgeVersion}")
+        }
+
+        String forgeBuildScript = file('worldedit-forge/build.gradle').getText('UTF-8')
+        if (!forgeBuildScript.contains("com.anatawa12.forge:ForgeGradle:1.2-1.1.1")) {
+            throw new GradleException('worldedit-forge must use ForgeGradle 1.2-1.1.1')
+        }
+        if (!forgeBuildScript.contains("force 'org.ow2.asm:asm:9.4'")) {
+            throw new GradleException('worldedit-forge must pin ASM 9.4 for ForgeGradle reobfuscation')
+        }
+        if (!forgeBuildScript.contains("compileOnly group: 'codechicken', name: 'ForgeMultipart'")) {
+            throw new GradleException('ForgeMultipart must remain a compile-only optional integration')
+        }
+        if (forgeBuildScript.contains("compile group: 'codechicken', name: 'ForgeMultipart'")) {
+            throw new GradleException('ForgeMultipart must not be injected into the development runtime')
+        }
+        String rootBuildScript = file('build.gradle').getText('UTF-8')
+        if (!rootBuildScript.contains("force 'org.ow2.asm:asm:9.4'") ||
+                !rootBuildScript.contains("force 'org.ow2.asm:asm-commons:9.4'") ||
+                !rootBuildScript.contains("force 'org.ow2.asm:asm-tree:9.4'")) {
+            throw new GradleException('The Shadow build-script classpath must be aligned to ASM 9.4')
+        }
+        if (rootBuildScript.contains('maven.' + 'sk89q.com')) {
+            throw new GradleException('The unavailable legacy SK89Q Maven endpoint must not be configured')
+        }
+        if (!(modVersionString ==~ /6\.1\.2_X\d+(?:-[A-Za-z0-9._-]+)?/)) {
+            throw new GradleException("Resolved version is invalid: ${modVersionString}")
+        }
+
+        Properties requiredProperties = new Properties()
+        gradlePropertiesFile.withInputStream { requiredProperties.load(it) }
+        Map<String, String> expectedProperties = [
+                modDisplayName : 'WorldEdit-WDG',
+                modBaseName    : 'WorldEdit',
+                jarBaseName    : 'WorldEdit-Forge-WDG',
+                modMainVersion : '6',
+                modSubVersion  : '1',
+                modPatchVersion: '2'
+        ]
+        expectedProperties.each { String key, String expected ->
+            if (requiredProperties.getProperty(key) != expected) {
+                throw new GradleException("gradle.properties must define ${key}=${expected}")
+            }
+        }
+        if (!(requiredProperties.getProperty('modBuildNumber') ==~ /\d+/)) {
+            throw new GradleException('gradle.properties must contain a numeric modBuildNumber')
+        }
+
+        String forgeSource = file('worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeWorldEdit.java').getText('UTF-8')
+        if (!forgeSource.contains('public static final String MOD_ID = "worldedit";')) {
+            throw new GradleException('The historical Forge runtime mod ID changed unexpectedly')
+        }
+
+        String metadataTemplate = file('worldedit-forge/src/main/resources/mcmod.info').getText('UTF-8')
+        if (!metadataTemplate.contains('"modid": "WorldEdit"')) {
+            throw new GradleException('mcmod.info no longer retains the WorldEdit identifier')
+        }
+        if (!metadataTemplate.contains('"name": "${displayName}"')) {
+            throw new GradleException('mcmod.info must source its visible name from modDisplayName')
+        }
+
+        List<String> ignoreLines = file('.gitignore').readLines('UTF-8').collect { it.trim() }
+        if (ignoreLines.any { it == 'gradle' || it == 'gradle/' || it == '/gradle/' }) {
+            throw new GradleException('.gitignore must not ignore the tracked Gradle wrapper directory')
+        }
+
+        List<String> contamination = []
+        FileTree repositoryFiles = fileTree(rootDir) {
+            exclude '.git/**'
+            exclude '.gradle/**'
+            exclude '**/build/**'
+            exclude '**/target/**'
+            exclude '**/run/**'
+            exclude '**/eclipse/**'
+            exclude '**/.idea/**'
+            exclude '**/.vscode/**'
+            exclude '**/out/**'
+            exclude '**/logs/**'
+            exclude '**/crash-reports/**'
+        }
+        repositoryFiles.files.each { File candidate ->
+            String relative = rootDir.toPath().relativize(candidate.toPath()).toString().replace('\\', '/')
+            List<String> components = relative.tokenize('/')
+            if (candidate.name == '.DS_Store' || candidate.name.startsWith('._') || components.contains('__MACOSX')) {
+                contamination << relative
+            }
+        }
+        if (!contamination.isEmpty()) {
+            throw new GradleException("macOS archive metadata is present: ${contamination}")
+        }
+
+        println "Repository foundation verified for ${modVersionString}"
+    }
+}
+
+if (releaseBuildRequested) {
+    gradle.buildFinished { result ->
+        if (result.failure == null) {
+            String originalText = gradlePropertiesFile.getText('ISO-8859-1')
+            String replacement = "modBuildNumber=${effectiveBuildNumber}"
+            String updatedText
+            if ((originalText =~ /(?m)^modBuildNumber=.*$/).find()) {
+                updatedText = originalText.replaceFirst('(?m)^modBuildNumber=.*$', replacement)
+            } else {
+                updatedText = originalText + (originalText.endsWith('\n') ? '' : '\n') + replacement + '\n'
+            }
+            gradlePropertiesFile.setText(updatedText, 'ISO-8859-1')
+            println "WorldEdit Forge WDG build number updated: X${currentBuildNumber} -> X${effectiveBuildNumber}"
         }
     }
 }

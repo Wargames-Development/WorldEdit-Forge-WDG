@@ -1,20 +1,95 @@
-.classpath
-.project
-.settings
-eclipse
-.idea
+# Gradle and build output
+/.gradle/
+**/build/
+**/target/
+**/forge-download/
+**/.forgegradle/
+**/dependency-reduced-pom.xml
+/.tmp/
+/.stage/
+
+# Generated Minecraft and Forge runtime data
+/run/
+**/run/
+/eclipse/
+**/eclipse/
+**/logs/
+**/crash-reports/
+**/saves/
+**/screenshots/
+**/server.properties
+**/eula.txt
+**/usercache.json
+**/ops.json
+**/whitelist.json
+**/banned-players.json
+**/banned-ips.json
+**/hs_err_pid*.log
+
+# IntelliJ IDEA
+/.idea/
+**/.idea/
 *.iml
 *.ipr
 *.iws
+/out/
+**/out/
 
-bin
-build
-target
-gradle
-.gradle
-forge-download
-out
-run
+# Eclipse
+.classpath
+.project
+.settings/
+.metadata/
+*.launch
+/bin/
+**/bin/
 
-/dependency-reduced-pom.xml
+# Visual Studio Code
+/.vscode/
+**/.vscode/
+
+# Logs, temporary files, and editor backups
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+*.orig
+*.rej
 *-private.sh
+
+# macOS metadata and archive contamination
+.DS_Store
+**/.DS_Store
+._*
+**/._*
+.AppleDouble
+**/.AppleDouble
+.LSOverride
+**/.LSOverride
+.Spotlight-V100/
+**/.Spotlight-V100/
+.Trashes/
+**/.Trashes/
+.fseventsd/
+**/.fseventsd/
+.TemporaryItems/
+**/.TemporaryItems/
+.DocumentRevisions-V100/
+**/.DocumentRevisions-V100/
+.com.apple.timemachine.donotpresent
+**/.com.apple.timemachine.donotpresent
+.apdisk
+**/.apdisk
+__MACOSX/
+**/__MACOSX/
+*.icloud
+
+# Windows metadata
+Thumbs.db
+**/Thumbs.db
+Desktop.ini
+**/Desktop.ini
+$RECYCLE.BIN/
+**/$RECYCLE.BIN/
