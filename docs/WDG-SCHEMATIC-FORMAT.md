@@ -22,21 +22,22 @@ Files are compressed NBT written through WorldEdit's JNBT implementation.
 
 ```text
 WDGSchematic (Compound)
-├── Version      Int       = 1
-├── Width        Int       > 0
-├── Height       Int       > 0
-├── Length       Int       > 0
-├── WEOriginX    Int       region minimum X
-├── WEOriginY    Int       region minimum Y
-├── WEOriginZ    Int       region minimum Z
-├── WEOffsetX    Int       minimum X minus clipboard origin X
-├── WEOffsetY    Int       minimum Y minus clipboard origin Y
-├── WEOffsetZ    Int       minimum Z minus clipboard origin Z
-├── Palette      List<String>
-├── Blocks       IntArray  palette indexes
-├── Data         ByteArray legacy metadata values 0 through 15
-├── TileEntities List<Compound>
-└── Entities     List<Compound>
+├── Version          Int       = 1
+├── TileEntityPolicy String    optional: preserve or strip
+├── Width            Int       > 0
+├── Height           Int       > 0
+├── Length           Int       > 0
+├── WEOriginX        Int       region minimum X
+├── WEOriginY        Int       region minimum Y
+├── WEOriginZ        Int       region minimum Z
+├── WEOffsetX        Int       minimum X minus clipboard origin X
+├── WEOffsetY        Int       minimum Y minus clipboard origin Y
+├── WEOffsetZ        Int       minimum Z minus clipboard origin Z
+├── Palette          List<String>
+├── Blocks           IntArray  palette indexes
+├── Data             ByteArray legacy metadata values 0 through 15
+├── TileEntities     List<Compound>
+└── Entities         List<Compound>
 ```
 
 The validated volume is `Width * Height * Length`, calculated using `long`
@@ -62,23 +63,35 @@ map those IDs to the same registry name.
 Legacy metadata is stored separately in `Data`. Registry names never contain a
 metadata suffix and are not interpreted as modern blockstate syntax.
 
-## Tile entities
+## Tile entities and preservation policy
 
-Each tile entity is stored as its complete compound. The writer preserves all
-available fields and replaces only `x`, `y`, and `z` with relative block
-coordinates. This includes nested compounds, lists, byte arrays, integer arrays,
-inventories, progress values, ownership data, energy or fluid values, and
-mod-specific GUI-backed configuration when those values were captured by the
-active world adapter.
+New version 1 files include the optional root string `TileEntityPolicy`. Its
+canonical values are `preserve` and `strip`. Files created before this tag was
+introduced remain valid; a missing tag is interpreted as `preserve` because
+those writers always preserved available tile-entity NBT. A present tag with the
+wrong NBT type, an empty value, or an unsupported value is malformed.
+The format version remains `1`.
 
-On load, the complete compound is attached to the matching block. The existing
-Forge paste path rewrites destination coordinates before creating the tile
-entity. Tile NBT is never attached when that block's registry name was missing
-and the block was replaced with air.
+With `preserve`, each tile entity is stored as its complete compound. The writer
+preserves all available fields and replaces only `x`, `y`, and `z` with relative
+block coordinates. This includes nested compounds, lists, byte arrays, integer
+arrays, inventories, slot numbers, stack counts, item NBT, progress values,
+ownership data, energy or fluid values, and mod-specific GUI-backed
+configuration captured by the active world adapter. No key allowlist, denylist,
+or selective filtering is applied.
 
-Version 1 preserves available tile-entity NBT by default. A later bounded change
-will add an explicit tile-entity preservation policy after vanilla and modded
-fidelity testing.
+With `strip`, the required `TileEntities` list remains present but is empty. The
+block registry palette, metadata, dimensions, origin, offset, and `Entities` list
+are unchanged. Strip mode removes only tile-entity NBT; it does not remove copied
+entities. The source clipboard and source world are not mutated. On paste, Forge
+or Minecraft may create a fresh default empty tile entity for the placed block.
+Data omitted by strip mode cannot be recovered during load.
+
+On load, preserved compounds are attached to matching blocks. The existing Forge
+paste path rewrites destination coordinates before creating the tile entity. Tile
+NBT is never attached when that block's registry name was missing and the block
+was replaced with air. A stripped file is valid and naturally provides no tile
+NBT to attach.
 
 ## Entities
 

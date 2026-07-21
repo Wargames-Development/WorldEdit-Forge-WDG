@@ -24,6 +24,7 @@ package com.sk89q.worldedit.util;
 import com.sk89q.util.StringUtil;
 import com.sk89q.worldedit.LocalConfiguration;
 import com.sk89q.worldedit.LocalSession;
+import com.sk89q.worldedit.extent.clipboard.io.WdgTileEntityPolicy;
 import com.sk89q.worldedit.world.snapshot.SnapshotRepository;
 
 import java.io.File;
@@ -108,6 +109,8 @@ public class PropertiesConfiguration extends LocalConfiguration {
         navigationUseGlass = getBool("nav-use-glass", navigationUseGlass);
         scriptTimeout = getInt("scripting-timeout", scriptTimeout);
         saveDir = getString("schematic-save-dir", saveDir);
+        wdgSchematicTileEntityPolicy = getWdgTileEntityPolicy(
+                "wdg-schematic-tile-entity-policy", wdgSchematicTileEntityPolicy);
         scriptsDir = getString("craftscript-dir", scriptsDir);
         butcherDefaultRadius = getInt("butcher-default-radius", butcherDefaultRadius);
         butcherMaxRadius = getInt("butcher-max-radius", butcherMaxRadius);
@@ -163,6 +166,30 @@ public class PropertiesConfiguration extends LocalConfiguration {
         } else {
             return val;
         }
+    }
+
+    /**
+     * Get and canonicalize the WDG schematic tile-entity policy.
+     *
+     * @param key the property key
+     * @param def the safe default policy
+     * @return the configured or fallback policy
+     */
+    protected WdgTileEntityPolicy getWdgTileEntityPolicy(String key, WdgTileEntityPolicy def) {
+        String rawValue = properties.getProperty(key);
+        if (rawValue == null) {
+            properties.setProperty(key, def.getSerializedValue());
+            return def;
+        }
+
+        WdgTileEntityPolicy policy = WdgTileEntityPolicy.fromConfigurationValue(rawValue);
+        if (policy == null) {
+            log.warning("Invalid " + key + " value '" + rawValue + "'; using "
+                    + WdgTileEntityPolicy.PRESERVE.getSerializedValue());
+            policy = WdgTileEntityPolicy.PRESERVE;
+        }
+        properties.setProperty(key, policy.getSerializedValue());
+        return policy;
     }
 
     /**

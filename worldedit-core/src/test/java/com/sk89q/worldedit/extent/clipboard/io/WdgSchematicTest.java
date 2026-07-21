@@ -73,6 +73,7 @@ import java.util.zip.GZIPOutputStream;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -138,6 +139,8 @@ public class WdgSchematicTest {
         byte[] data = writeClipboard(clipboard, sourceWorldData());
         CompoundTag root = readRoot(data);
         assertEquals(WdgSchematicFormat.VERSION, root.getInt("Version"));
+        assertEquals("preserve", root.getString("TileEntityPolicy"));
+        assertEquals(1, root.getListTag("TileEntities").getValue().size());
         assertArrayEquals(new int[] {0, 1, 2, 2, 3}, root.getIntArray("Blocks"));
         assertArrayEquals(new byte[] {0, 1, 7, 14, 15}, root.getByteArray("Data"));
         assertEquals(Arrays.asList(AIR, STONE, WOOL, MACHINE), readPalette(root));
@@ -148,7 +151,10 @@ public class WdgSchematicTest {
                 .register(1, STONE)
                 .register(35, WOOL)
                 .register(812, MACHINE);
-        Clipboard loaded = readClipboard(data, new TestWorldData(destinationRegistry));
+        WdgSchematicReader reader = newReader(data);
+        Clipboard loaded = reader.read(new TestWorldData(destinationRegistry));
+        assertTrue(reader.hasRecordedTileEntityPolicy());
+        assertEquals(WdgTileEntityPolicy.PRESERVE, reader.getTileEntityPolicy());
 
         assertEquals(region.getMinimumPoint(), loaded.getMinimumPoint());
         assertEquals(region.getMaximumPoint(), loaded.getMaximumPoint());
@@ -161,10 +167,21 @@ public class WdgSchematicTest {
         assertEquals("testmod.machine", tile.getString("id"));
         assertEquals("Configured", tile.getString("CustomName"));
         assertEquals(42, tile.getInt("CookTime"));
+        assertEquals(17, tile.getInt("BurnTime"));
+        assertEquals(200, tile.getInt("CookTimeTotal"));
         assertArrayEquals(new byte[] {3, 1, 4}, tile.getByteArray("Bytes"));
         assertArrayEquals(new int[] {9, 2, 6}, tile.getIntArray("Ints"));
         assertEquals("nested-value", ((CompoundTag) tile.getValue().get("MachineConfig")).getString("Mode"));
         assertEquals(2, tile.getListTag("Items").getValue().size());
+        CompoundTag firstItem = (CompoundTag) tile.getListTag("Items").getValue().get(0);
+        assertEquals(0, firstItem.getByte("Slot"));
+        assertEquals(12, firstItem.getByte("Count"));
+        CompoundTag itemTag = (CompoundTag) firstItem.getValue().get("tag");
+        CompoundTag display = (CompoundTag) itemTag.getValue().get("display");
+        assertEquals("Renamed Ingot", display.getString("Name"));
+        CompoundTag secondItem = (CompoundTag) tile.getListTag("Items").getValue().get(1);
+        assertEquals(4, secondItem.getByte("Slot"));
+        assertEquals(5, secondItem.getByte("Count"));
         assertEquals(4, tile.getInt("x"));
         assertEquals(0, tile.getInt("y"));
         assertEquals(0, tile.getInt("z"));
@@ -176,6 +193,110 @@ public class WdgSchematicTest {
         assertEquals(minimum.add(2.25, 0.5, 0.75), loadedEntity.getLocation().toVector());
         assertEquals(37.5F, loadedEntity.getLocation().getYaw(), 0.0001F);
         assertEquals(-12.25F, loadedEntity.getLocation().getPitch(), 0.0001F);
+    }
+
+    @Test
+    public void testStripPolicyOmitsTileNbtWithoutChangingClipboardOrEntities() throws Exception {
+        Vector minimum = new Vector(10, 20, 30);
+        CuboidRegion region = new CuboidRegion(minimum, minimum.add(1, 0, 0));
+        BlockArrayClipboard clipboard = new BlockArrayClipboard(region);
+        clipboard.setOrigin(new Vector(8, 19, 25));
+        clipboard.setBlock(minimum, new BaseBlock(300, 15, createMachineNbt()));
+        clipboard.setBlock(minimum.add(1, 0, 0), new BaseBlock(35, 7));
+
+        Map<String, Tag> entityNbt = new LinkedHashMap<String, Tag>();
+        entityNbt.put("CustomName", new StringTag("Strip Test Entity"));
+        clipboard.createEntity(new Location(clipboard, minimum.add(0.5, 0.25, 0.75), 12F, -4F),
+                new BaseEntity("Pig", new CompoundTag(entityNbt)));
+
+        byte[] data = writeClipboard(clipboard, sourceWorldData(), WdgTileEntityPolicy.STRIP);
+        CompoundTag root = readRoot(data);
+        assertEquals("strip", root.getString("TileEntityPolicy"));
+        assertTrue(root.getValue().containsKey("TileEntities"));
+        assertEquals(CompoundTag.class, root.getListTag("TileEntities").getType());
+        assertEquals(0, root.getListTag("TileEntities").getValue().size());
+        assertEquals(Arrays.asList(MACHINE, WOOL), readPalette(root));
+        assertArrayEquals(new int[] {0, 1}, root.getIntArray("Blocks"));
+        assertArrayEquals(new byte[] {15, 7}, root.getByteArray("Data"));
+        assertEquals(2, root.getInt("Width"));
+        assertEquals(1, root.getInt("Height"));
+        assertEquals(1, root.getInt("Length"));
+        assertEquals(10, root.getInt("WEOriginX"));
+        assertEquals(2, root.getInt("WEOffsetX"));
+        assertEquals(1, root.getListTag("Entities").getValue().size());
+
+        CompoundTag sourceNbt = clipboard.getBlock(minimum).getNbtData();
+        assertNotNull(sourceNbt);
+        assertEquals("Configured", sourceNbt.getString("CustomName"));
+        assertEquals(999, sourceNbt.getInt("x"));
+        assertEquals(2, sourceNbt.getListTag("Items").getValue().size());
+
+        WdgSchematicReader reader = newReader(data);
+        Clipboard loaded = reader.read(destinationWorldData());
+        assertTrue(reader.hasRecordedTileEntityPolicy());
+        assertEquals(WdgTileEntityPolicy.STRIP, reader.getTileEntityPolicy());
+        assertEquals(812, loaded.getBlock(minimum).getId());
+        assertEquals(15, loaded.getBlock(minimum).getData());
+        assertNull(loaded.getBlock(minimum).getNbtData());
+        assertEquals(1, loaded.getEntities().size());
+        assertEquals("Strip Test Entity",
+                loaded.getEntities().get(0).getState().getNbtData().getString("CustomName"));
+    }
+
+    @Test
+    public void testPreserveRejectsMalformedTileNbtWhileStripOmitsIt() throws Exception {
+        Vector minimum = Vector.ZERO;
+        BlockArrayClipboard clipboard = new BlockArrayClipboard(new CuboidRegion(minimum, minimum));
+        Map<String, Tag> malformedValues = new LinkedHashMap<String, Tag>();
+        malformedValues.put("Items", new ListTag(CompoundTag.class, new ArrayList<Tag>()));
+        clipboard.setBlock(minimum, new BaseBlock(300, 6, new CompoundTag(malformedValues)));
+
+        expectIOException("missing a non-empty string id", new IoRunnable() {
+            @Override
+            public void run() throws Exception {
+                writeClipboard(clipboard, sourceWorldData(), WdgTileEntityPolicy.PRESERVE);
+            }
+        });
+
+        CompoundTag stripped = readRoot(
+                writeClipboard(clipboard, sourceWorldData(), WdgTileEntityPolicy.STRIP));
+        assertEquals("strip", stripped.getString("TileEntityPolicy"));
+        assertEquals(0, stripped.getListTag("TileEntities").getValue().size());
+        assertArrayEquals(new byte[] {6}, stripped.getByteArray("Data"));
+
+        clipboard.setBlock(minimum, new BaseBlock(99, 6, new CompoundTag(malformedValues)));
+        expectIOException("block ID 99", new IoRunnable() {
+            @Override
+            public void run() throws Exception {
+                writeClipboard(clipboard, sourceWorldData(), WdgTileEntityPolicy.STRIP);
+            }
+        });
+    }
+
+    @Test
+    public void testReaderPolicyCompatibilityAndValidation() throws Exception {
+        byte[] current = writeClipboard(createSimpleClipboard(), sourceWorldData());
+        CompoundTag root = readRoot(current);
+
+        Map<String, Tag> oldValues = new LinkedHashMap<String, Tag>(root.getValue());
+        oldValues.remove("TileEntityPolicy");
+        WdgSchematicReader oldReader = newReader(
+                writeNamedCompound(WdgSchematicFormat.ROOT_NAME, oldValues));
+        oldReader.read(destinationWorldData());
+        assertFalse(oldReader.hasRecordedTileEntityPolicy());
+        assertEquals(WdgTileEntityPolicy.PRESERVE, oldReader.getTileEntityPolicy());
+
+        Map<String, Tag> wrongType = new LinkedHashMap<String, Tag>(root.getValue());
+        wrongType.put("TileEntityPolicy", new IntTag(1));
+        expectReadFailure("TileEntityPolicy", wrongType);
+
+        Map<String, Tag> emptyValue = new LinkedHashMap<String, Tag>(root.getValue());
+        emptyValue.put("TileEntityPolicy", new StringTag(""));
+        expectReadFailure("unsupported TileEntityPolicy value", emptyValue);
+
+        Map<String, Tag> unknownValue = new LinkedHashMap<String, Tag>(root.getValue());
+        unknownValue.put("TileEntityPolicy", new StringTag("maybe"));
+        expectReadFailure("unsupported TileEntityPolicy value", unknownValue);
     }
 
     @Test
@@ -436,6 +557,11 @@ public class WdgSchematicTest {
         firstItem.put("Slot", new ByteTag((byte) 0));
         firstItem.put("id", new StringTag("minecraft:iron_ingot"));
         firstItem.put("Count", new ByteTag((byte) 12));
+        Map<String, Tag> display = new LinkedHashMap<String, Tag>();
+        display.put("Name", new StringTag("Renamed Ingot"));
+        Map<String, Tag> itemTag = new LinkedHashMap<String, Tag>();
+        itemTag.put("display", new CompoundTag(display));
+        firstItem.put("tag", new CompoundTag(itemTag));
         items.add(new CompoundTag(firstItem));
         Map<String, Tag> secondItem = new LinkedHashMap<String, Tag>();
         secondItem.put("Slot", new ByteTag((byte) 4));
@@ -450,6 +576,8 @@ public class WdgSchematicTest {
         values.put("z", new IntTag(997));
         values.put("CustomName", new StringTag("Configured"));
         values.put("CookTime", new IntTag(42));
+        values.put("BurnTime", new IntTag(17));
+        values.put("CookTimeTotal", new IntTag(200));
         values.put("Items", new ListTag(CompoundTag.class, items));
         values.put("MachineConfig", new CompoundTag(nested));
         values.put("Bytes", new ByteArrayTag(new byte[] {3, 1, 4}));
@@ -474,8 +602,15 @@ public class WdgSchematicTest {
     }
 
     private byte[] writeClipboard(Clipboard clipboard, WorldData worldData) throws Exception {
+        return writeClipboard(clipboard, worldData, null);
+    }
+
+    private byte[] writeClipboard(Clipboard clipboard, WorldData worldData,
+                                  WdgTileEntityPolicy policy) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        ClipboardWriter writer = ClipboardFormat.WDG_SCHEMATIC.getWriter(output);
+        ClipboardWriter writer = policy == null
+                ? ClipboardFormat.WDG_SCHEMATIC.getWriter(output)
+                : ClipboardFormat.WDG_SCHEMATIC.getWriter(output, policy);
         try {
             writer.write(clipboard, worldData);
         } finally {

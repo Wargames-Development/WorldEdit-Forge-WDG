@@ -156,6 +156,24 @@ public enum ClipboardFormat {
     public abstract ClipboardWriter getWriter(OutputStream outputStream) throws IOException;
 
     /**
+     * Create a WDG writer with an explicit per-writer tile-entity policy.
+     *
+     * @param outputStream the output stream
+     * @param tileEntityPolicy the immutable WDG tile-entity policy
+     * @return a WDG clipboard writer
+     * @throws IOException thrown on I/O error
+     * @throws IllegalStateException if this is not the WDG format
+     */
+    public ClipboardWriter getWriter(OutputStream outputStream,
+                                     WdgTileEntityPolicy tileEntityPolicy) throws IOException {
+        if (this != WDG_SCHEMATIC) {
+            throw new IllegalStateException("An explicit WDG tile-entity policy requires the WDG format");
+        }
+        NBTOutputStream nbtStream = new NBTOutputStream(new GZIPOutputStream(outputStream));
+        return new WdgSchematicWriter(nbtStream, tileEntityPolicy);
+    }
+
+    /**
      * Return whether the given file is of this format.
      *
      * @param file the file

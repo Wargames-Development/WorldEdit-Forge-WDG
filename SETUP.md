@@ -155,6 +155,38 @@ The generated game files are kept under the Forge runtime directory and are igno
 
 ForgeMultipart is an optional WorldEdit compatibility target. Its development API is compile-only, so a normal WorldEdit client/server smoke does not load ForgeMultipart, CodeChickenLib, or CodeChickenCore. Test multipart compatibility separately with a complete matching mod set when that integration is changed.
 
+## WDG schematic tile-entity policy
+
+The generated Forge development configuration is normally located at:
+
+```text
+worldedit-forge/eclipse/config/worldedit/worldedit.properties
+```
+
+The server-authoritative default is:
+
+```properties
+wdg-schematic-tile-entity-policy=preserve
+```
+
+Supported values are exactly `preserve` and `strip`. Preserve writes complete
+available tile-entity NBT. Strip writes an empty WDG `TileEntities` list while
+retaining blocks, metadata, origin, offset, and copied entities. Direct
+`//copy`, `//paste`, and legacy `.schematic` behaviour are unchanged.
+
+Override the configured default for one WDG save with:
+
+```text
+//schem save -p wdg <filename>
+//schem save -s wdg <filename>
+```
+
+The `wdgschem` alias works identically. The switches are mutually exclusive and
+are rejected for legacy schematic saves. On dedicated servers the dedicated
+server configuration is authoritative; integrated servers use their generated
+server-side WorldEdit configuration. Restart the development client or server
+after changing the generated property.
+
 ## WDG version behaviour
 
 The base version comes from the root `gradle.properties` file:

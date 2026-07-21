@@ -36,6 +36,8 @@ import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardReader;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
 import com.sk89q.worldedit.extent.clipboard.io.WdgSchematicReader;
+import com.sk89q.worldedit.extent.clipboard.io.WdgSchematicWriter;
+import com.sk89q.worldedit.extent.clipboard.io.WdgTileEntityPolicy;
 import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.session.ClipboardHolder;
@@ -139,14 +141,20 @@ public class SchematicCommands {
 
     @Command(
             aliases = { "save" },
-            usage = "[<format>] <filename>",
+            usage = "[-p|-s] [<format>] <filename>",
+            flags = "ps",
             desc = "Save a schematic into your clipboard",
+            help = "Save the clipboard to a schematic file.\n"
+                    + "For WDG schematics only, -p preserves complete tile-entity data and "
+                    + "-s strips all tile-entity data. Entities are unaffected.",
             min = 1, max = 2
     )
     @Deprecated
     @CommandPermissions({ "worldedit.clipboard.save", "worldedit.schematic.save" })
     public void save(Player player, LocalSession session, @Optional("schematic") String formatName,
-                     String filename) throws CommandException, WorldEditException {
+                     String filename, @Switch('p') boolean preserveTileEntities,
+                     @Switch('s') boolean stripTileEntities)
+            throws CommandException, WorldEditException {
         ClipboardFormat format = ClipboardFormat.findByAlias(formatName);
         if (format == null) {
             player.printError("Unknown schematic format: " + formatName);
@@ -154,6 +162,8 @@ public class SchematicCommands {
         }
 
         LocalConfiguration config = worldEdit.getConfiguration();
+        WdgTileEntityPolicy tileEntityPolicy = WdgSchematicSavePolicyResolver.resolve(
+                format, config.wdgSchematicTileEntityPolicy, preserveTileEntities, stripTileEntities);
         File dir = worldEdit.getWorkingDirectoryFile(config.saveDir);
         File f = worldEdit.getSafeSaveFile(player, dir, filename, format.getPrimaryExtension(),
                 format.getFileExtensions());
@@ -175,6 +185,7 @@ public class SchematicCommands {
         }
 
         File temporaryFile = null;
+        WdgSchematicWriter wdgWriter = null;
         try {
             File parent = f.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -191,8 +202,14 @@ public class SchematicCommands {
             try {
                 FileOutputStream fos = closer.register(new FileOutputStream(outputFile));
                 BufferedOutputStream bos = closer.register(new BufferedOutputStream(fos));
-                ClipboardWriter writer = closer.register(format.getWriter(bos));
-                writer.write(target, holder.getWorldData());
+                ClipboardWriter writer;
+                if (format == ClipboardFormat.WDG_SCHEMATIC) {
+                    writer = format.getWriter(bos, tileEntityPolicy);
+                    wdgWriter = (WdgSchematicWriter) writer;
+                } else {
+                    writer = format.getWriter(bos);
+                }
+                closer.register(writer).write(target, holder.getWorldData());
             } finally {
                 closer.close();
             }
@@ -202,8 +219,20 @@ public class SchematicCommands {
                 temporaryFile = null;
             }
 
-            log.info(player.getName() + " saved " + f.getCanonicalPath());
-            player.print(filename + " saved.");
+            if (wdgWriter != null) {
+                int tileEntityCount = wdgWriter.getTileEntityCount();
+                String action = tileEntityPolicy == WdgTileEntityPolicy.PRESERVE
+                        ? "preserved" : "stripped";
+                log.info(player.getName() + " saved " + f.getCanonicalPath()
+                        + " with WDG tile-entity policy " + tileEntityPolicy.getSerializedValue()
+                        + " (" + tileEntityCount + " record"
+                        + (tileEntityCount == 1 ? "" : "s") + " " + action + ")");
+                player.print("WDG saved: " + tileEntityCount + " tile "
+                        + (tileEntityCount == 1 ? "entity " : "entities ") + action + ".");
+            } else {
+                log.info(player.getName() + " saved " + f.getCanonicalPath());
+                player.print(filename + " saved.");
+            }
         } catch (IOException e) {
             player.printError("Schematic could not written: " + e.getMessage());
             log.log(Level.WARNING, "Failed to write a saved clipboard", e);
@@ -346,7 +375,16 @@ public class SchematicCommands {
             return;
         }
 
-        Set<String> missingNames = ((WdgSchematicReader) reader).getMissingBlockRegistryNames();
+        WdgSchematicReader wdgReader = (WdgSchematicReader) reader;
+        if (wdgReader.hasRecordedTileEntityPolicy()
+                && wdgReader.getTileEntityPolicy() == WdgTileEntityPolicy.STRIP) {
+            player.print("WDG was saved with tile entities stripped.");
+            player.print("Container and machine state are not present.");
+            log.info(player.getName() + " loaded a WDG schematic recorded with stripped "
+                    + "tile-entity data");
+        }
+
+        Set<String> missingNames = wdgReader.getMissingBlockRegistryNames();
         if (missingNames.isEmpty()) {
             return;
         }

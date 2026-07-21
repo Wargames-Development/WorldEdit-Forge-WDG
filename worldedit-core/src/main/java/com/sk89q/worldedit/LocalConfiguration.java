@@ -21,6 +21,7 @@ package com.sk89q.worldedit;
 
 import com.sk89q.worldedit.blocks.BlockID;
 import com.sk89q.worldedit.blocks.ItemID;
+import com.sk89q.worldedit.extent.clipboard.io.WdgTileEntityPolicy;
 import com.sk89q.worldedit.world.snapshot.SnapshotRepository;
 
 import java.io.File;
@@ -106,6 +107,7 @@ public abstract class LocalConfiguration {
     public int scriptTimeout = 3000;
     public Set<Integer> allowedDataCycleBlocks = new HashSet<Integer>();
     public String saveDir = "schematics";
+    public WdgTileEntityPolicy wdgSchematicTileEntityPolicy = WdgTileEntityPolicy.PRESERVE;
     public String scriptsDir = "craftscripts";
     public boolean showHelpInfo = true;
     public int butcherDefaultRadius = -1;

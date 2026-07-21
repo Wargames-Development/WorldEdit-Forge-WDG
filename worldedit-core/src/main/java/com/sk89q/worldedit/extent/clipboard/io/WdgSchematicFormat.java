@@ -38,6 +38,7 @@ final class WdgSchematicFormat {
 
     static final String ROOT_NAME = "WDGSchematic";
     static final int VERSION = 1;
+    static final String TILE_ENTITY_POLICY_TAG = "TileEntityPolicy";
     static final String AIR_REGISTRY_NAME = "minecraft:air";
 
     private static final Pattern REGISTRY_NAME =

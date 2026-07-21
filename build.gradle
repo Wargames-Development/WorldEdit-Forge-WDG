@@ -197,7 +197,10 @@ task verifyWdgSchematic {
                 'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicFormat.java',
                 'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicReader.java',
                 'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicWriter.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgTileEntityPolicy.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/command/WdgSchematicSavePolicyResolver.java',
                 'worldedit-core/src/main/java/com/sk89q/worldedit/world/registry/BlockRegistryNameResolver.java',
+                'worldedit-forge/src/main/resources/defaults/worldedit.properties',
                 'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicReader.java',
                 'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicWriter.java',
                 'worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeWorld.java',
@@ -237,6 +240,26 @@ task verifyWdgSchematic {
                 !writerSource.contains('BlockRegistryNameResolver')) {
             throw new GradleException('WDG reader and writer must use BlockRegistryNameResolver')
         }
+        if (!readerSource.contains('TileEntityPolicy') ||
+                !writerSource.contains('TileEntityPolicy') ||
+                !writerSource.contains('WdgTileEntityPolicy.PRESERVE')) {
+            throw new GradleException('WDG reader and writer must implement the tile-entity policy tag')
+        }
+
+        String policySource = file(
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgTileEntityPolicy.java'
+        ).getText('UTF-8')
+        if (!policySource.contains('PRESERVE("preserve")') ||
+                !policySource.contains('STRIP("strip")')) {
+            throw new GradleException('WDG tile-entity policy values must remain preserve and strip')
+        }
+
+        String defaults = file(
+                'worldedit-forge/src/main/resources/defaults/worldedit.properties'
+        ).getText('UTF-8')
+        if (!defaults.contains('wdg-schematic-tile-entity-policy=preserve')) {
+            throw new GradleException('The committed WDG tile-entity policy default must be preserve')
+        }
 
         String forgeWorldSource = file(
                 'worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeWorld.java'
@@ -254,14 +277,18 @@ task verifyWdgSchematic {
         ).getText('UTF-8')
         if (!commandsSource.contains('format.getPrimaryExtension()') ||
                 !commandsSource.contains('getMissingBlockRegistryNames()') ||
-                !commandsSource.contains('@Optional("schematic")')) {
-            throw new GradleException('Schematic commands must preserve the default and use WDG extensions and diagnostics')
+                !commandsSource.contains('@Optional("schematic")') ||
+                !commandsSource.contains('flags = "ps"') ||
+                !commandsSource.contains('WdgSchematicSavePolicyResolver.resolve')) {
+            throw new GradleException('Schematic commands must preserve defaults and use WDG policy diagnostics')
         }
 
         String documentation = file('docs/WDG-SCHEMATIC-FORMAT.md').getText('UTF-8')
         if (!documentation.contains('WDGSchematic') ||
                 !documentation.contains('Numeric block IDs are not stored as authoritative identity') ||
-                !documentation.contains('Unknown versions are rejected')) {
+                !documentation.contains('Unknown versions are rejected') ||
+                !documentation.contains('TileEntityPolicy') ||
+                !documentation.contains('The format version remains `1`')) {
             throw new GradleException('WDG schematic format documentation is incomplete')
         }
 

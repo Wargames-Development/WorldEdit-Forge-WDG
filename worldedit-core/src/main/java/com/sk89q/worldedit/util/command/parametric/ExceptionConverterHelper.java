@@ -64,6 +64,17 @@ public abstract class ExceptionConverterHelper implements ExceptionConverter {
         this.handlers = handlers;
     }
 
+    /**
+     * Preserve command validation failures raised by reflected command methods.
+     *
+     * @param e the command exception
+     * @throws CommandException always, using the original exception
+     */
+    @ExceptionMatch
+    public void convert(CommandException e) throws CommandException {
+        throw e;
+    }
+
     @Override
     public void convert(Throwable t) throws CommandException {
         Class<?> throwableClass = t.getClass();

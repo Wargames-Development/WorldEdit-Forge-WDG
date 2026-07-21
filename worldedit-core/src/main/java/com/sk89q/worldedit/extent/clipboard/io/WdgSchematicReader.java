@@ -59,6 +59,8 @@ public class WdgSchematicReader implements ClipboardReader {
 
     private final NBTInputStream inputStream;
     private final LinkedHashSet<String> missingBlockRegistryNames = new LinkedHashSet<String>();
+    private WdgTileEntityPolicy tileEntityPolicy = WdgTileEntityPolicy.PRESERVE;
+    private boolean tileEntityPolicyRecorded;
 
     /**
      * Create a WDG schematic reader.
@@ -81,9 +83,31 @@ public class WdgSchematicReader implements ClipboardReader {
         return Collections.unmodifiableSet(new LinkedHashSet<String>(missingBlockRegistryNames));
     }
 
+    /**
+     * Get the policy recorded by the most recently read WDG file.
+     *
+     * <p>Older version 1 files without the optional tag report preserve.</p>
+     *
+     * @return the recorded or compatibility-default policy
+     */
+    public WdgTileEntityPolicy getTileEntityPolicy() {
+        return tileEntityPolicy;
+    }
+
+    /**
+     * Return whether the most recently read file explicitly recorded its policy.
+     *
+     * @return true when the optional version 1 tag was present
+     */
+    public boolean hasRecordedTileEntityPolicy() {
+        return tileEntityPolicyRecorded;
+    }
+
     @Override
     public Clipboard read(WorldData data) throws IOException {
         missingBlockRegistryNames.clear();
+        tileEntityPolicy = WdgTileEntityPolicy.PRESERVE;
+        tileEntityPolicyRecorded = false;
         try {
             return readInternal(data);
         } catch (IOException e) {
@@ -109,6 +133,7 @@ public class WdgSchematicReader implements ClipboardReader {
             throw new IOException("Unsupported WDG schematic version " + version
                     + " (supported version: " + WdgSchematicFormat.VERSION + ")");
         }
+        readTileEntityPolicy(schematic);
 
         int width = requireTag(schematic, "Width", IntTag.class).getValue();
         int height = requireTag(schematic, "Height", IntTag.class).getValue();
@@ -236,6 +261,26 @@ public class WdgSchematicReader implements ClipboardReader {
         }
 
         return clipboard;
+    }
+
+    private void readTileEntityPolicy(Map<String, Tag> schematic) throws IOException {
+        Tag policyTag = schematic.get(WdgSchematicFormat.TILE_ENTITY_POLICY_TAG);
+        if (policyTag == null) {
+            tileEntityPolicy = WdgTileEntityPolicy.PRESERVE;
+            tileEntityPolicyRecorded = false;
+            return;
+        }
+        if (!(policyTag instanceof StringTag)) {
+            throw new IOException("WDG schematic tag 'TileEntityPolicy' is not StringTag");
+        }
+
+        String value = ((StringTag) policyTag).getValue();
+        WdgTileEntityPolicy policy = WdgTileEntityPolicy.fromSerializedValue(value);
+        if (policy == null) {
+            throw new IOException("WDG schematic has unsupported TileEntityPolicy value: " + value);
+        }
+        tileEntityPolicy = policy;
+        tileEntityPolicyRecorded = true;
     }
 
     private List<String> readPalette(ListTag paletteTag) throws IOException {

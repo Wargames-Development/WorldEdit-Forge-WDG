@@ -51,6 +51,8 @@ import java.util.Map;
 public class WdgSchematicWriter implements ClipboardWriter {
 
     private final NBTOutputStream outputStream;
+    private final WdgTileEntityPolicy tileEntityPolicy;
+    private int tileEntityCount;
 
     /**
      * Create a WDG schematic writer.
@@ -58,10 +60,43 @@ public class WdgSchematicWriter implements ClipboardWriter {
      * @param outputStream the compressed NBT output stream
      */
     public WdgSchematicWriter(NBTOutputStream outputStream) {
+        this(outputStream, WdgTileEntityPolicy.PRESERVE);
+    }
+
+    /**
+     * Create a WDG schematic writer with an explicit tile-entity policy.
+     *
+     * @param outputStream the compressed NBT output stream
+     * @param tileEntityPolicy the immutable policy for this writer
+     */
+    public WdgSchematicWriter(NBTOutputStream outputStream,
+                              WdgTileEntityPolicy tileEntityPolicy) {
         if (outputStream == null) {
             throw new NullPointerException("outputStream");
         }
+        if (tileEntityPolicy == null) {
+            throw new NullPointerException("tileEntityPolicy");
+        }
         this.outputStream = outputStream;
+        this.tileEntityPolicy = tileEntityPolicy;
+    }
+
+    /**
+     * Get the immutable policy used by this writer.
+     *
+     * @return the writer policy
+     */
+    public WdgTileEntityPolicy getTileEntityPolicy() {
+        return tileEntityPolicy;
+    }
+
+    /**
+     * Get the number of tile-entity records preserved or deliberately omitted.
+     *
+     * @return the tile-entity record count from the most recent write
+     */
+    public int getTileEntityCount() {
+        return tileEntityCount;
     }
 
     @Override
@@ -70,6 +105,7 @@ public class WdgSchematicWriter implements ClipboardWriter {
             throw new NullPointerException("clipboard");
         }
 
+        tileEntityCount = 0;
         BlockRegistryNameResolver resolver = WdgSchematicFormat.requireResolver(data);
         Region region = clipboard.getRegion();
         Vector origin = clipboard.getOrigin();
@@ -121,17 +157,22 @@ public class WdgSchematicWriter implements ClipboardWriter {
 
             CompoundTag rawTileEntity = block.getNbtData();
             if (rawTileEntity != null) {
-                Tag idTag = rawTileEntity.getValue().get("id");
-                if (!(idTag instanceof StringTag) || ((StringTag) idTag).getValue().isEmpty()) {
-                    throw new IOException("Cannot save WDG schematic: tile entity at " + x + "," + y
-                            + "," + z + " is missing a non-empty string id");
-                }
+                tileEntityCount++;
+                if (tileEntityPolicy == WdgTileEntityPolicy.PRESERVE) {
+                    Tag idTag = rawTileEntity.getValue().get("id");
+                    if (!(idTag instanceof StringTag)
+                            || ((StringTag) idTag).getValue().isEmpty()) {
+                        throw new IOException("Cannot save WDG schematic: tile entity at " + x + "," + y
+                                + "," + z + " is missing a non-empty string id");
+                    }
 
-                Map<String, Tag> values = new LinkedHashMap<String, Tag>(rawTileEntity.getValue());
-                values.put("x", new IntTag(x));
-                values.put("y", new IntTag(y));
-                values.put("z", new IntTag(z));
-                tileEntities.add(new CompoundTag(values));
+                    Map<String, Tag> values =
+                            new LinkedHashMap<String, Tag>(rawTileEntity.getValue());
+                    values.put("x", new IntTag(x));
+                    values.put("y", new IntTag(y));
+                    values.put("z", new IntTag(z));
+                    tileEntities.add(new CompoundTag(values));
+                }
             }
         }
 
@@ -142,6 +183,8 @@ public class WdgSchematicWriter implements ClipboardWriter {
 
         Map<String, Tag> schematic = new LinkedHashMap<String, Tag>();
         schematic.put("Version", new IntTag(WdgSchematicFormat.VERSION));
+        schematic.put(WdgSchematicFormat.TILE_ENTITY_POLICY_TAG,
+                new StringTag(tileEntityPolicy.getSerializedValue()));
         schematic.put("Width", new IntTag(width));
         schematic.put("Height", new IntTag(height));
         schematic.put("Length", new IntTag(length));
