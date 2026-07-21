@@ -34,7 +34,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
@@ -50,7 +50,7 @@ public enum ClipboardFormat {
     /**
      * The Schematic format used by many software.
      */
-    SCHEMATIC("mcedit", "mce", "schematic") {
+    SCHEMATIC("schematic", new String[] { "schematic" }, "mcedit", "mce", "schematic") {
         @Override
         public ClipboardReader getReader(InputStream inputStream) throws IOException {
             NBTInputStream nbtStream = new NBTInputStream(new GZIPInputStream(inputStream));
@@ -65,39 +65,48 @@ public enum ClipboardFormat {
 
         @Override
         public boolean isFormat(File file) {
-            DataInputStream str = null;
-            try {
-                str = new DataInputStream(new GZIPInputStream(new FileInputStream(file)));
-                if ((str.readByte() & 0xFF) != NBTConstants.TYPE_COMPOUND) {
-                    return false;
-                }
-                byte[] nameBytes = new byte[str.readShort() & 0xFFFF];
-                str.readFully(nameBytes);
-                String name = new String(nameBytes, NBTConstants.CHARSET);
-                return name.equals("Schematic");
-            } catch (IOException e) {
-                return false;
-            } finally {
-                if (str != null) {
-                    try {
-                        str.close();
-                    } catch (IOException ignored) {
-                    }
-                }
-            }
+            return hasCompressedNbtRoot(file, "Schematic");
+        }
+    },
+
+    /**
+     * The WDG registry-stable schematic version 1 format.
+     */
+    WDG_SCHEMATIC("wdgschem", new String[] { "wdgschem" }, "wdg", "wdgschem") {
+        @Override
+        public ClipboardReader getReader(InputStream inputStream) throws IOException {
+            NBTInputStream nbtStream = new NBTInputStream(new GZIPInputStream(inputStream));
+            return new WdgSchematicReader(nbtStream);
+        }
+
+        @Override
+        public ClipboardWriter getWriter(OutputStream outputStream) throws IOException {
+            NBTOutputStream nbtStream = new NBTOutputStream(new GZIPOutputStream(outputStream));
+            return new WdgSchematicWriter(nbtStream);
+        }
+
+        @Override
+        public boolean isFormat(File file) {
+            return hasCompressedNbtRoot(file, WdgSchematicFormat.ROOT_NAME);
         }
     };
 
     private static final Map<String, ClipboardFormat> aliasMap = new HashMap<String, ClipboardFormat>();
 
+    private final String primaryExtension;
+    private final String[] fileExtensions;
     private final String[] aliases;
 
     /**
      * Create a new instance.
      *
-     * @param aliases an array of aliases by which this format may be referred to
+     * @param primaryExtension the extension appended when one is omitted
+     * @param fileExtensions extensions advertised to file dialogs
+     * @param aliases aliases by which this format may be referred to
      */
-    private ClipboardFormat(String ... aliases) {
+    private ClipboardFormat(String primaryExtension, String[] fileExtensions, String... aliases) {
+        this.primaryExtension = primaryExtension;
+        this.fileExtensions = fileExtensions.clone();
         this.aliases = aliases;
     }
 
@@ -107,7 +116,25 @@ public enum ClipboardFormat {
      * @return a set of aliases
      */
     public Set<String> getAliases() {
-        return Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(aliases)));
+        return Collections.unmodifiableSet(new LinkedHashSet<String>(Arrays.asList(aliases)));
+    }
+
+    /**
+     * Get the extension appended when a filename has no extension.
+     *
+     * @return the primary extension without a leading period
+     */
+    public String getPrimaryExtension() {
+        return primaryExtension;
+    }
+
+    /**
+     * Get the extensions advertised for this format.
+     *
+     * @return a defensive copy of extensions without leading periods
+     */
+    public String[] getFileExtensions() {
+        return fileExtensions.clone();
     }
 
     /**
@@ -175,4 +202,28 @@ public enum ClipboardFormat {
         return null;
     }
 
+    private static boolean hasCompressedNbtRoot(File file, String expectedRoot) {
+        DataInputStream stream = null;
+        try {
+            stream = new DataInputStream(new GZIPInputStream(new FileInputStream(file)));
+            if ((stream.readByte() & 0xFF) != NBTConstants.TYPE_COMPOUND) {
+                return false;
+            }
+            byte[] nameBytes = new byte[stream.readShort() & 0xFFFF];
+            stream.readFully(nameBytes);
+            String name = new String(nameBytes, NBTConstants.CHARSET);
+            return expectedRoot.equals(name);
+        } catch (IOException e) {
+            return false;
+        } catch (RuntimeException e) {
+            return false;
+        } finally {
+            if (stream != null) {
+                try {
+                    stream.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
 }

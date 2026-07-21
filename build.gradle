@@ -187,12 +187,106 @@ task printBuildVersion {
     }
 }
 
+task verifyWdgSchematic {
+    group = 'verification'
+    description = 'Checks the bounded WDG registry-stable schematic format sources.'
+
+    doLast {
+        List<String> requiredFiles = [
+                'docs/WDG-SCHEMATIC-FORMAT.md',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicFormat.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicReader.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicWriter.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/world/registry/BlockRegistryNameResolver.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicReader.java',
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicWriter.java',
+                'worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeWorld.java',
+                'worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeBlockPlacement.java',
+                'worldedit-forge/src/test/java/com/sk89q/worldedit/forge/ForgeBlockPlacementTest.java'
+        ]
+        requiredFiles.each { String path ->
+            if (!file(path).isFile()) {
+                throw new GradleException("Required WDG schematic file is missing: ${path}")
+            }
+        }
+
+        String formatSource = file(
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/ClipboardFormat.java'
+        ).getText('UTF-8')
+        if (!formatSource.contains('WDG_SCHEMATIC') ||
+                !formatSource.contains('"wdg", "wdgschem"') ||
+                !formatSource.contains('"wdgschem"')) {
+            throw new GradleException('ClipboardFormat must register WDG aliases and the wdgschem extension')
+        }
+
+        String constantsSource = file(
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicFormat.java'
+        ).getText('UTF-8')
+        if (!constantsSource.contains('ROOT_NAME = "WDGSchematic"') ||
+                !constantsSource.contains('VERSION = 1')) {
+            throw new GradleException('WDG schematic root name or version 1 identifier is missing')
+        }
+
+        String readerSource = file(
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicReader.java'
+        ).getText('UTF-8')
+        String writerSource = file(
+                'worldedit-core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/WdgSchematicWriter.java'
+        ).getText('UTF-8')
+        if (!readerSource.contains('BlockRegistryNameResolver') ||
+                !writerSource.contains('BlockRegistryNameResolver')) {
+            throw new GradleException('WDG reader and writer must use BlockRegistryNameResolver')
+        }
+
+        String forgeWorldSource = file(
+                'worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeWorld.java'
+        ).getText('UTF-8')
+        String placementSource = file(
+                'worldedit-forge/src/main/java/com/sk89q/worldedit/forge/ForgeBlockPlacement.java'
+        ).getText('UTF-8')
+        if (!forgeWorldSource.contains('ForgeBlockPlacement.setBlockAndRestoreMetadata') ||
+                !placementSource.contains('chunk.setBlockMetadata')) {
+            throw new GradleException('Forge placement must restore exact clipboard metadata after callbacks')
+        }
+
+        String commandsSource = file(
+                'worldedit-core/src/main/java/com/sk89q/worldedit/command/SchematicCommands.java'
+        ).getText('UTF-8')
+        if (!commandsSource.contains('format.getPrimaryExtension()') ||
+                !commandsSource.contains('getMissingBlockRegistryNames()') ||
+                !commandsSource.contains('@Optional("schematic")')) {
+            throw new GradleException('Schematic commands must preserve the default and use WDG extensions and diagnostics')
+        }
+
+        String documentation = file('docs/WDG-SCHEMATIC-FORMAT.md').getText('UTF-8')
+        if (!documentation.contains('WDGSchematic') ||
+                !documentation.contains('Numeric block IDs are not stored as authoritative identity') ||
+                !documentation.contains('Unknown versions are rejected')) {
+            throw new GradleException('WDG schematic format documentation is incomplete')
+        }
+
+        String rootBuildScript = file('build.gradle').getText('UTF-8')
+        int verificationTaskIndex = rootBuildScript.indexOf('task verifyWdgSchematic')
+        String dependencyScripts = rootBuildScript.substring(0, verificationTaskIndex) + "\n" +
+                file('worldedit-core/build.gradle').getText('UTF-8') + "\n" +
+                file('worldedit-forge/build.gradle').getText('UTF-8')
+        String normalizedDependencies = dependencyScripts.toLowerCase(Locale.ENGLISH)
+        if (normalizedDependencies.contains('spongeapi') ||
+                normalizedDependencies.contains('org.spongepowered')) {
+            throw new GradleException('A modern Sponge schematic dependency must not be added')
+        }
+
+        println "WDG schematic version 1 sources verified for ${modVersionString}"
+    }
+}
+
 task verifyRepository {
     group = 'verification'
     description = 'Checks the bounded WorldEdit Forge WDG repository foundation.'
     dependsOn ':worldedit-forge:verifyProcessedResources'
     dependsOn ':worldedit-forge:verifyReobfToolchain'
     dependsOn ':worldedit-forge:verifyOptionalIntegrationClasspath'
+    dependsOn verifyWdgSchematic
 
     doLast {
         List<String> requiredFiles = [

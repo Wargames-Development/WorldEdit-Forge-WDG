@@ -35,6 +35,7 @@ import com.sk89q.worldedit.extent.clipboard.Clipboard;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardReader;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
+import com.sk89q.worldedit.extent.clipboard.io.WdgSchematicReader;
 import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.session.ClipboardHolder;
@@ -50,10 +51,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -90,20 +95,21 @@ public class SchematicCommands {
     )
     @Deprecated
     @CommandPermissions({ "worldedit.clipboard.load", "worldedit.schematic.load" })
-    public void load(Player player, LocalSession session, @Optional("schematic") String formatName, String filename) throws FilenameException {
-        LocalConfiguration config = worldEdit.getConfiguration();
-
-        File dir = worldEdit.getWorkingDirectoryFile(config.saveDir);
-        File f = worldEdit.getSafeOpenFile(player, dir, filename, "schematic", "schematic");
-
-        if (!f.exists()) {
-            player.printError("Schematic " + filename + " does not exist!");
-            return;
-        }
-
+    public void load(Player player, LocalSession session, @Optional("schematic") String formatName,
+                     String filename) throws FilenameException {
         ClipboardFormat format = ClipboardFormat.findByAlias(formatName);
         if (format == null) {
             player.printError("Unknown schematic format: " + formatName);
+            return;
+        }
+
+        LocalConfiguration config = worldEdit.getConfiguration();
+        File dir = worldEdit.getWorkingDirectoryFile(config.saveDir);
+        File f = worldEdit.getSafeOpenFile(player, dir, filename, format.getPrimaryExtension(),
+                format.getFileExtensions());
+
+        if (!f.exists()) {
+            player.printError("Schematic " + filename + " does not exist!");
             return;
         }
 
@@ -114,8 +120,9 @@ public class SchematicCommands {
             ClipboardReader reader = format.getReader(bis);
 
             WorldData worldData = player.getWorld().getWorldData();
-            Clipboard clipboard = reader.read(player.getWorld().getWorldData());
+            Clipboard clipboard = reader.read(worldData);
             session.setClipboard(new ClipboardHolder(clipboard, worldData));
+            reportWdgDiagnostics(player, reader);
 
             log.info(player.getName() + " loaded " + f.getCanonicalPath());
             player.print(filename + " loaded. Paste it with //paste");
@@ -138,17 +145,18 @@ public class SchematicCommands {
     )
     @Deprecated
     @CommandPermissions({ "worldedit.clipboard.save", "worldedit.schematic.save" })
-    public void save(Player player, LocalSession session, @Optional("schematic") String formatName, String filename) throws CommandException, WorldEditException {
-        LocalConfiguration config = worldEdit.getConfiguration();
-
-        File dir = worldEdit.getWorkingDirectoryFile(config.saveDir);
-        File f = worldEdit.getSafeSaveFile(player, dir, filename, "schematic", "schematic");
-
+    public void save(Player player, LocalSession session, @Optional("schematic") String formatName,
+                     String filename) throws CommandException, WorldEditException {
         ClipboardFormat format = ClipboardFormat.findByAlias(formatName);
         if (format == null) {
             player.printError("Unknown schematic format: " + formatName);
             return;
         }
+
+        LocalConfiguration config = worldEdit.getConfiguration();
+        File dir = worldEdit.getWorkingDirectoryFile(config.saveDir);
+        File f = worldEdit.getSafeSaveFile(player, dir, filename, format.getPrimaryExtension(),
+                format.getFileExtensions());
 
         ClipboardHolder holder = session.getClipboard();
         Clipboard clipboard = holder.getClipboard();
@@ -157,7 +165,8 @@ public class SchematicCommands {
 
         // If we have a transform, bake it into the copy
         if (!transform.isIdentity()) {
-            FlattenedClipboardTransform result = FlattenedClipboardTransform.transform(clipboard, transform, holder.getWorldData());
+            FlattenedClipboardTransform result = FlattenedClipboardTransform.transform(
+                    clipboard, transform, holder.getWorldData());
             target = new BlockArrayClipboard(result.getTransformedRegion());
             target.setOrigin(clipboard.getOrigin());
             Operations.completeLegacy(result.copyTo(target));
@@ -165,29 +174,42 @@ public class SchematicCommands {
             target = clipboard;
         }
 
-        Closer closer = Closer.create();
+        File temporaryFile = null;
         try {
-            // Create parent directories
             File parent = f.getParentFile();
-            if (parent != null && !parent.exists()) {
-                if (!parent.mkdirs()) {
-                    throw new CommandException("Could not create folder for schematics!");
-                }
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                throw new CommandException("Could not create folder for schematics!");
             }
 
-            FileOutputStream fos = closer.register(new FileOutputStream(f));
-            BufferedOutputStream bos = closer.register(new BufferedOutputStream(fos));
-            ClipboardWriter writer = closer.register(format.getWriter(bos));
-            writer.write(target, holder.getWorldData());
+            File outputFile = f;
+            if (format == ClipboardFormat.WDG_SCHEMATIC) {
+                temporaryFile = File.createTempFile("wdgschem-", ".tmp", parent);
+                outputFile = temporaryFile;
+            }
+
+            Closer closer = Closer.create();
+            try {
+                FileOutputStream fos = closer.register(new FileOutputStream(outputFile));
+                BufferedOutputStream bos = closer.register(new BufferedOutputStream(fos));
+                ClipboardWriter writer = closer.register(format.getWriter(bos));
+                writer.write(target, holder.getWorldData());
+            } finally {
+                closer.close();
+            }
+
+            if (temporaryFile != null) {
+                replaceTemporaryFile(temporaryFile, f);
+                temporaryFile = null;
+            }
+
             log.info(player.getName() + " saved " + f.getCanonicalPath());
             player.print(filename + " saved.");
         } catch (IOException e) {
             player.printError("Schematic could not written: " + e.getMessage());
             log.log(Level.WARNING, "Failed to write a saved clipboard", e);
         } finally {
-            try {
-                closer.close();
-            } catch (IOException ignored) {
+            if (temporaryFile != null && temporaryFile.exists() && !temporaryFile.delete()) {
+                log.warning("Failed to delete temporary WDG schematic " + temporaryFile);
             }
         }
     }
@@ -317,6 +339,48 @@ public class SchematicCommands {
         }
 
         actor.print(build.toString());
+    }
+
+    private void reportWdgDiagnostics(Player player, ClipboardReader reader) {
+        if (!(reader instanceof WdgSchematicReader)) {
+            return;
+        }
+
+        Set<String> missingNames = ((WdgSchematicReader) reader).getMissingBlockRegistryNames();
+        if (missingNames.isEmpty()) {
+            return;
+        }
+
+        log.warning(player.getName() + " loaded a WDG schematic with missing block registry names "
+                + "replaced by air: " + missingNames);
+
+        StringBuilder message = new StringBuilder();
+        message.append("Loaded with ").append(missingNames.size())
+                .append(" missing block types replaced by air: ");
+        int shown = 0;
+        for (String registryName : missingNames) {
+            if (shown > 0) {
+                message.append(", ");
+            }
+            message.append(registryName);
+            shown++;
+            if (shown == 10) {
+                break;
+            }
+        }
+        if (missingNames.size() > shown) {
+            message.append(" (+").append(missingNames.size() - shown).append(" more)");
+        }
+        player.printError(message.toString());
+    }
+
+    private void replaceTemporaryFile(File temporaryFile, File destination) throws IOException {
+        try {
+            Files.move(temporaryFile.toPath(), destination.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(temporaryFile.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private List<File> allFiles(File root) {

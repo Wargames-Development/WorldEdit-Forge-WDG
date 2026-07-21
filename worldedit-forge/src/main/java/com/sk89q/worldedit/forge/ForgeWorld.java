@@ -160,7 +160,8 @@ public class ForgeWorld extends AbstractWorld {
             previousId = Block.getIdFromBlock(chunk.getBlock(x & 15, y, z & 15));
         }
 
-        boolean successful = chunk.func_150807_a(x & 15, y, z & 15, Block.getBlockById(block.getId()), block.getData());
+        boolean successful = ForgeBlockPlacement.setBlockAndRestoreMetadata(
+                chunk, x & 15, y, z & 15, Block.getBlockById(block.getId()), block.getData());
 
         // Create the TileEntity
         if (successful) {

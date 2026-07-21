@@ -205,6 +205,26 @@ task verifyProcessedResources(dependsOn: processResources) {
         if (!metadata.contains('"version": "' + project.version + '"')) {
             throw new GradleException("Generated mcmod.info does not contain version ${project.version}")
         }
+
+        def parsedMetadata = new groovy.json.JsonSlurper().parseText(metadata)
+        if (!(parsedMetadata instanceof List) || parsedMetadata.size() != 1 ||
+                !(parsedMetadata[0] instanceof Map)) {
+            throw new GradleException('Generated mcmod.info must contain exactly one mod metadata object')
+        }
+
+        Map metadataEntry = (Map) parsedMetadata[0]
+        List<String> expectedForgeDependencies = ['Forge@[' + rootProject.forgeVersion + ',)']
+        if (metadataEntry.requiredMods != expectedForgeDependencies) {
+            throw new GradleException('WorldEdit must require only Forge: ' + metadataEntry.requiredMods)
+        }
+        if (metadataEntry.dependencies != expectedForgeDependencies) {
+            throw new GradleException('WorldEdit must advertise no content-mod dependencies: ' +
+                    metadataEntry.dependencies)
+        }
+        if (metadataEntry.dependants != []) {
+            throw new GradleException('WorldEdit must not advertise content-mod dependants: ' +
+                    metadataEntry.dependants)
+        }
     }
 }
 

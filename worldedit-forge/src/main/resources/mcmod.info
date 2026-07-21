@@ -14,8 +14,7 @@
         "Forge@[${forgeVersion},)"
     ],
     "dependencies": [
-        "Forge@[${forgeVersion},)",
-        "ForgeMultipart"
+        "Forge@[${forgeVersion},)"
     ],
     "dependants": []
 }]
