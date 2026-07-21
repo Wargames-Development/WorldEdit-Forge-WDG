@@ -36,6 +36,7 @@ import com.sk89q.worldedit.blocks.BlockType;
 import com.sk89q.worldedit.entity.Player;
 import com.sk89q.worldedit.extension.platform.permission.ActorSelectorLimits;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
+import com.sk89q.worldedit.internal.command.BlockRegistryArguments;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.regions.RegionOperationException;
 import com.sk89q.worldedit.regions.RegionSelector;
@@ -628,6 +629,7 @@ public class SelectionCommands {
         max = 1
     )
     @CommandPermissions("worldedit.analysis.count")
+    @BlockRegistryArguments(patterns = { 0 })
     public void count(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
         boolean useData = args.hasFlag('d');

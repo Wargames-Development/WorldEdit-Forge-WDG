@@ -37,6 +37,18 @@ WorldEdit-Forge-WDG-6.1.2_X<build>-dist.jar
 
 Do not install the `-dev`, `-unshaded-dev`, `-sources`, or `-javadoc` artifacts into a normal Minecraft instance.
 
+## Forge registry-name completion
+
+WorldEdit-Forge-WDG provides server-side tab completion for active Forge block registry names. Type at least one character of a registry name and press Tab, for example:
+
+```text
+//set mine<Tab>
+//set minecraft:st<Tab>
+//replace minecraft:stone examplemod:mach<Tab>
+```
+
+Suggestions come from the active integrated or dedicated server block registry, so modded blocks work generically without hard-coded mod lists. Matching is ASCII case-insensitive while returned names preserve their canonical registry spelling, including underscores. Results are prefix-filtered, deterministic, permission-aware, and capped at 100 entries to remain safe on large modpacks. An empty block argument intentionally does not enumerate the registry. Numeric IDs, legacy aliases, metadata, and existing pattern syntax remain valid and unchanged. After a complete block reference, a metadata prefix such as `minecraft:wool:1<Tab>` or `wool:<Tab>` offers matching values from 0 through 15 without replacing the block name.
+
 ## Versioning
 
 WDG builds use the existing WorldEdit 6.1.2 line with an `_X` build suffix, for example `6.1.2_X1`. A branch label can be added for local builds with `-Pbranch=dev`, producing a version such as `6.1.2_X1-dev`.

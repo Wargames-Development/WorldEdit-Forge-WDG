@@ -20,16 +20,22 @@
 package com.sk89q.worldedit.forge;
 
 import com.sk89q.worldedit.blocks.BaseBlock;
+import com.sk89q.worldedit.world.registry.BlockRegistryNameCompleter;
 import com.sk89q.worldedit.world.registry.BlockRegistryNameResolver;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -48,6 +54,9 @@ public class ForgeBlockRegistryTest {
         registryAccess.register(250, "examplemod:machine_block");
         registryAccess.register(251, "hbm:tile.machine_difurnace_off");
         registryAccess.register(252, "ExampleMod:CaseSensitive_Block");
+        registryAccess.register(253, "examplemod:casesensitive_block");
+        registryAccess.register(254, "invalid registry name");
+        registryAccess.register(255, "minecraft:wool:14");
         registryAccess.alias("minecraft:rock", "minecraft:stone");
         registry = new ForgeBlockRegistry(registryAccess);
     }
@@ -55,6 +64,61 @@ public class ForgeBlockRegistryTest {
     @Test
     public void exposesOptionalResolverCapability() {
         assertTrue(registry instanceof BlockRegistryNameResolver);
+        assertTrue(registry instanceof BlockRegistryNameCompleter);
+    }
+
+
+    @Test
+    public void registrySuggestionsAreSortedCanonicalAndCaseInsensitive() {
+        assertEquals(Arrays.asList(
+                "minecraft:air",
+                "minecraft:stone",
+                "minecraft:wool"), registry.getRegistryNameSuggestions("mine", 100));
+        assertEquals(Collections.singletonList("minecraft:stone"),
+                registry.getRegistryNameSuggestions("MINECRAFT:ST", 100));
+        assertEquals(Collections.singletonList("ExampleMod:CaseSensitive_Block"),
+                registry.getRegistryNameSuggestions("examplemod:case", 100));
+        assertEquals(Collections.singletonList("minecraft:wool"),
+                registry.getRegistryNameSuggestions("minecraft:wool", 100));
+    }
+
+    @Test
+    public void registrySuggestionsRejectEmptyMalformedAndUnknownPrefixes() {
+        assertTrue(registry.getRegistryNameSuggestions("", 100).isEmpty());
+        assertTrue(registry.getRegistryNameSuggestions(":stone", 100).isEmpty());
+        assertTrue(registry.getRegistryNameSuggestions("minecraft:stone:1", 100).isEmpty());
+        assertTrue(registry.getRegistryNameSuggestions("missing:", 100).isEmpty());
+        assertEquals(1, registryAccess.getEnumerationCount());
+    }
+
+    @Test
+    public void registrySnapshotBuildsOnceAndResultsAreSafelyImmutable() {
+        List<String> first = registry.getRegistryNameSuggestions("m", 2);
+        List<String> second = registry.getRegistryNameSuggestions("minecraft:", 100);
+
+        assertEquals(1, registryAccess.getEnumerationCount());
+        assertNotSame(first, second);
+        assertEquals(2, first.size());
+
+        try {
+            first.add("minecraft:dirt");
+        } catch (UnsupportedOperationException expected) {
+            return;
+        }
+        throw new AssertionError("Suggestion result must be immutable");
+    }
+
+    @Test
+    public void largeRegistryUsesOneSnapshotAndEnforcesLimit() {
+        FakeRegistryAccess largeAccess = new FakeRegistryAccess();
+        for (int i = 0; i < 5000; i++) {
+            largeAccess.register(i, String.format("large:entry_%04d", i));
+        }
+        ForgeBlockRegistry largeRegistry = new ForgeBlockRegistry(largeAccess);
+
+        assertEquals(25, largeRegistry.getRegistryNameSuggestions("large:entry_0", 25).size());
+        assertEquals(25, largeRegistry.getRegistryNameSuggestions("large:entry_0", 25).size());
+        assertEquals(1, largeAccess.getEnumerationCount());
     }
 
     @Test
@@ -67,7 +131,8 @@ public class ForgeBlockRegistryTest {
     @Test
     public void preservesRegistryCaseWithoutNormalising() {
         assertRoundTrip(252, "ExampleMod:CaseSensitive_Block");
-        assertNull(registry.getBlockId("examplemod:casesensitive_block"));
+        assertRoundTrip(253, "examplemod:casesensitive_block");
+        assertNull(registry.getBlockId("examplemod:CASESENSITIVE_BLOCK"));
     }
 
     @Test
@@ -133,6 +198,7 @@ public class ForgeBlockRegistryTest {
         private final Map<String, Object> blocksByName = new HashMap<String, Object>();
         private final Map<Object, Integer> idsByBlock = new HashMap<Object, Integer>();
         private final Map<Object, String> namesByBlock = new HashMap<Object, String>();
+        private int enumerationCount;
 
         void register(int blockId, String registryName) {
             Object block = new Object();
@@ -165,6 +231,16 @@ public class ForgeBlockRegistryTest {
         public int getId(Object block) {
             Integer blockId = idsByBlock.get(block);
             return blockId == null ? -1 : blockId;
+        }
+
+        @Override
+        public Iterable<?> getRegisteredBlocks() {
+            enumerationCount++;
+            return new ArrayList<Object>(blocksById.values());
+        }
+
+        int getEnumerationCount() {
+            return enumerationCount;
         }
 
     }

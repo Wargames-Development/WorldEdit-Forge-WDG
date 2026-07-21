@@ -79,6 +79,7 @@ import com.sk89q.worldedit.util.logging.LogFormat;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -330,7 +331,7 @@ public final class CommandManager {
             locals.put("arguments", event.getArguments());
             event.setSuggestions(dispatcher.getSuggestions(event.getArguments(), locals));
         } catch (CommandException e) {
-            event.getActor().printError(e.getMessage());
+            event.setSuggestions(Collections.<String>emptyList());
         }
     }
 

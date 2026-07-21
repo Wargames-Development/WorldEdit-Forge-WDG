@@ -26,6 +26,7 @@ import com.sk89q.worldedit.*;
 import com.sk89q.worldedit.blocks.BaseBlock;
 import com.sk89q.worldedit.blocks.ItemType;
 import com.sk89q.worldedit.entity.Player;
+import com.sk89q.worldedit.internal.command.BlockRegistryArguments;
 import com.sk89q.worldedit.patterns.Pattern;
 import com.sk89q.worldedit.command.tool.*;
 import com.sk89q.worldedit.util.TreeGenerator;
@@ -98,6 +99,7 @@ public class ToolCommands {
         max = 1
     )
     @CommandPermissions("worldedit.tool.replacer")
+    @BlockRegistryArguments(blocks = { 0 })
     public void repl(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
         BaseBlock targetBlock = we.getBlock(player, args.getString(0));
@@ -129,6 +131,7 @@ public class ToolCommands {
         max = 2
     )
     @CommandPermissions("worldedit.tool.flood-fill")
+    @BlockRegistryArguments(patterns = { 0 })
     public void floodFill(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
         LocalConfiguration config = we.getConfiguration();
@@ -182,6 +185,7 @@ public class ToolCommands {
             max = 2
     )
     @CommandPermissions("worldedit.tool.lrbuild")
+    @BlockRegistryArguments(blocks = { 0, 1 })
     public void longrangebuildtool(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
         BaseBlock secondary = we.getBlock(player, args.getString(0));

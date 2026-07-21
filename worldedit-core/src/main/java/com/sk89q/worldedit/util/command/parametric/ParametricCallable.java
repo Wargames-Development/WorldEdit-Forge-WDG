@@ -26,7 +26,10 @@ import com.sk89q.minecraft.util.commands.CommandException;
 import com.sk89q.minecraft.util.commands.CommandLocals;
 import com.sk89q.minecraft.util.commands.CommandPermissions;
 import com.sk89q.minecraft.util.commands.CommandPermissionsException;
+import com.sk89q.minecraft.util.commands.SuggestionContext;
 import com.sk89q.minecraft.util.commands.WrappedCommandException;
+import com.sk89q.worldedit.internal.command.BlockRegistryArguments;
+import com.sk89q.worldedit.internal.command.BlockRegistryCompletion;
 import com.sk89q.worldedit.util.command.CommandCallable;
 import com.sk89q.worldedit.util.command.InvalidUsageException;
 import com.sk89q.worldedit.util.command.MissingParameterException;
@@ -41,7 +44,9 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -273,7 +278,154 @@ class ParametricCallable implements CommandCallable {
 
     @Override
     public List<String> getSuggestions(String arguments, CommandLocals locals) throws CommandException {
+        if (!testPermission(locals)) {
+            return Collections.emptyList();
+        }
+
+        CommandContext context;
+        try {
+            context = new CommandContext(CommandContext.split("_ " + arguments), getValueFlags(), true, locals);
+        } catch (CommandException e) {
+            return Collections.emptyList();
+        }
+
+        SuggestionTarget target = getSuggestionTarget(context);
+        if (target != null) {
+            BlockRegistryArguments registryArguments = method.getAnnotation(BlockRegistryArguments.class);
+            if (registryArguments != null && target.flag == null) {
+                if (contains(registryArguments.blocks(), target.argumentIndex)) {
+                    return BlockRegistryCompletion.getBlockSuggestions(locals, target.prefix);
+                }
+                if (contains(registryArguments.patterns(), target.argumentIndex)) {
+                    return BlockRegistryCompletion.getPatternSuggestions(locals, target.prefix);
+                }
+            }
+
+            ParameterData parameter = findSuggestionParameter(context, target);
+            if (parameter != null) {
+                Binding binding = parameter.getBinding();
+                if (binding instanceof ContextualBinding) {
+                    List<String> suggestions = ((ContextualBinding) binding)
+                            .getSuggestions(parameter, target.prefix, locals);
+                    if (suggestions != null) {
+                        return immutableDistinct(suggestions);
+                    }
+                }
+
+                List<String> suggestions = binding.getSuggestions(parameter, target.prefix);
+                if (suggestions != null && !suggestions.isEmpty()) {
+                    return immutableDistinct(suggestions);
+                }
+            }
+        }
+
         return builder.getDefaultCompleter().getSuggestions(arguments, locals);
+    }
+
+    private SuggestionTarget getSuggestionTarget(CommandContext context) {
+        SuggestionContext suggestion = context.getSuggestionContext();
+        if (suggestion.forFlag()) {
+            Character flag = suggestion.getFlag();
+            return new SuggestionTarget(-1, context.getFlag(flag, ""), flag);
+        }
+
+        int argumentIndex;
+        String prefix;
+        if (suggestion.forLastValue() && context.argsLength() > 0) {
+            argumentIndex = context.argsLength() - 1;
+            prefix = context.getString(argumentIndex);
+        } else {
+            argumentIndex = context.argsLength();
+            prefix = "";
+        }
+        return new SuggestionTarget(argumentIndex, prefix, null);
+    }
+
+    private ParameterData findSuggestionParameter(CommandContext context, SuggestionTarget target) {
+        if (target.flag != null) {
+            for (ParameterData parameter : parameters) {
+                if (target.flag.equals(parameter.getFlag())) {
+                    return parameter;
+                }
+            }
+            return null;
+        }
+
+        int position = 0;
+        for (int i = 0; i < parameters.length; i++) {
+            ParameterData parameter = parameters[i];
+            if (!parameter.isNonFlagConsumer()) {
+                continue;
+            }
+
+            int consumedCount = parameter.getConsumedCount();
+            if (consumedCount < 1) {
+                return null;
+            }
+
+            if (!shouldConsumeForSuggestions(i, position, context.argsLength())) {
+                continue;
+            }
+
+            if (target.argumentIndex >= position
+                    && target.argumentIndex < position + consumedCount) {
+                return parameter;
+            }
+            position += consumedCount;
+        }
+        return null;
+    }
+
+    private boolean shouldConsumeForSuggestions(int parameterIndex, int position, int argumentCount) {
+        ParameterData parameter = parameters[parameterIndex];
+        if (!parameter.isOptional()) {
+            return true;
+        }
+
+        int numberFree = argumentCount - position;
+        boolean requiredLater = false;
+        for (int i = parameterIndex + 1; i < parameters.length; i++) {
+            ParameterData later = parameters[i];
+            if (later.isNonFlagConsumer() && !later.isOptional()) {
+                requiredLater = true;
+                int consumedCount = later.getConsumedCount();
+                if (consumedCount < 0) {
+                    return false;
+                }
+                numberFree -= consumedCount;
+            }
+        }
+        return numberFree >= 1 || (!requiredLater && position == argumentCount);
+    }
+
+    private static boolean contains(int[] positions, int position) {
+        for (int candidate : positions) {
+            if (candidate == position) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<String> immutableDistinct(List<String> suggestions) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(new ArrayList<String>(new LinkedHashSet<String>(suggestions)));
+    }
+
+    private static class SuggestionTarget {
+
+        private final int argumentIndex;
+        private final String prefix;
+        private final Character flag;
+
+        SuggestionTarget(int argumentIndex, String prefix, Character flag) {
+            this.argumentIndex = argumentIndex;
+            this.prefix = prefix;
+            this.flag = flag;
+        }
+
     }
 
     /**

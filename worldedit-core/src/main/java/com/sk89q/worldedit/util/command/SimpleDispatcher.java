@@ -162,7 +162,7 @@ public class SimpleDispatcher implements Dispatcher {
             CommandMapping mapping = get(subCommand);
             String passedArguments = Joiner.on(" ").join(Arrays.copyOfRange(split, 1, split.length));
 
-            if (mapping != null) {
+            if (mapping != null && mapping.getCallable().testPermission(locals)) {
                 return mapping.getCallable().getSuggestions(passedArguments, locals);
             } else {
                 return Collections.emptyList();

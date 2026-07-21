@@ -19,6 +19,7 @@
 
 package com.sk89q.worldedit.internal.command;
 
+import com.sk89q.minecraft.util.commands.CommandLocals;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.IncompleteRegionException;
 import com.sk89q.worldedit.LocalSession;
@@ -43,7 +44,9 @@ import com.sk89q.worldedit.util.TreeGenerator.TreeType;
 import com.sk89q.worldedit.util.command.parametric.ArgumentStack;
 import com.sk89q.worldedit.util.command.parametric.BindingBehavior;
 import com.sk89q.worldedit.util.command.parametric.BindingHelper;
+import com.sk89q.worldedit.util.command.parametric.ContextualBinding;
 import com.sk89q.worldedit.util.command.parametric.BindingMatch;
+import com.sk89q.worldedit.util.command.parametric.ParameterData;
 import com.sk89q.worldedit.util.command.parametric.ParameterException;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.world.biome.BaseBiome;
@@ -56,7 +59,7 @@ import java.util.List;
 /**
  * Binds standard WorldEdit classes such as {@link Player} and {@link LocalSession}.
  */
-public class WorldEditBinding extends BindingHelper {
+public class WorldEditBinding extends BindingHelper implements ContextualBinding {
     
     private final WorldEdit worldEdit;
 
@@ -67,6 +70,16 @@ public class WorldEditBinding extends BindingHelper {
      */
     public WorldEditBinding(WorldEdit worldEdit) {
         this.worldEdit = worldEdit;
+    }
+
+    @Override
+    public List<String> getSuggestions(ParameterData parameter, String prefix, CommandLocals locals) {
+        if (BaseBlock.class.equals(parameter.getType())) {
+            return BlockRegistryCompletion.getBlockSuggestions(locals, prefix);
+        } else if (Pattern.class.equals(parameter.getType()) || Mask.class.equals(parameter.getType())) {
+            return BlockRegistryCompletion.getPatternSuggestions(locals, prefix);
+        }
+        return null;
     }
 
     /**

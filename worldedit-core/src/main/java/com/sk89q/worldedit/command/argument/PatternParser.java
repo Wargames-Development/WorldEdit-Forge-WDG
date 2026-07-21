@@ -31,15 +31,19 @@ import com.sk89q.worldedit.extension.input.ParserContext;
 import com.sk89q.worldedit.extension.platform.Actor;
 import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.function.pattern.Pattern;
+import com.sk89q.worldedit.internal.command.BlockRegistryCompletion;
 import com.sk89q.worldedit.util.command.argument.CommandArgs;
+import com.sk89q.worldedit.util.command.argument.MissingArgumentException;
 import com.sk89q.worldedit.world.World;
+
+import java.util.List;
 
 public class PatternParser extends SimpleCommand<Pattern> {
 
     private final StringParser stringParser;
 
     public PatternParser(String name) {
-        stringParser = addParameter(new StringParser(name, "The pattern"));
+        stringParser = addParameter(new PatternStringParser(name));
     }
 
     @Override
@@ -76,6 +80,19 @@ public class PatternParser extends SimpleCommand<Pattern> {
     @Override
     public boolean testPermission0(CommandLocals locals) {
         return true;
+    }
+
+    private static class PatternStringParser extends StringParser {
+
+        PatternStringParser(String name) {
+            super(name, "The pattern");
+        }
+
+        @Override
+        public List<String> getSuggestions(CommandArgs args, CommandLocals locals) throws MissingArgumentException {
+            return BlockRegistryCompletion.getPatternSuggestions(locals, args.next());
+        }
+
     }
 
 }

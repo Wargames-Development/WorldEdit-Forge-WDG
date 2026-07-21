@@ -43,6 +43,7 @@ import com.sk89q.worldedit.extension.platform.Platform;
 import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.function.visitor.EntityVisitor;
 import com.sk89q.worldedit.internal.expression.Expression;
+import com.sk89q.worldedit.internal.command.BlockRegistryArguments;
 import com.sk89q.worldedit.internal.expression.ExpressionException;
 import com.sk89q.worldedit.internal.expression.runtime.EvaluationException;
 import com.sk89q.worldedit.patterns.Pattern;
@@ -89,6 +90,7 @@ public class UtilityCommands {
         max = 3
     )
     @CommandPermissions("worldedit.fill")
+    @BlockRegistryArguments(patterns = { 0 })
     @Logging(PLACEMENT)
     public void fill(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
@@ -117,6 +119,7 @@ public class UtilityCommands {
         max = 3
     )
     @CommandPermissions("worldedit.fill.recursive")
+    @BlockRegistryArguments(patterns = { 0 })
     @Logging(PLACEMENT)
     public void fillr(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
@@ -240,6 +243,7 @@ public class UtilityCommands {
         max = 2
     )
     @CommandPermissions("worldedit.removenear")
+    @BlockRegistryArguments(blocks = { 0 })
     @Logging(PLACEMENT)
     public void removeNear(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
 
@@ -260,6 +264,7 @@ public class UtilityCommands {
         max = 3
     )
     @CommandPermissions("worldedit.replacenear")
+    @BlockRegistryArguments(patterns = { 1, 2 })
     @Logging(PLACEMENT)
     public void replaceNear(Player player, LocalSession session, EditSession editSession, CommandContext args) throws WorldEditException {
         

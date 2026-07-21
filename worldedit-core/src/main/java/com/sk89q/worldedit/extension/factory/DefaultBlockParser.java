@@ -30,6 +30,8 @@ import com.sk89q.worldedit.extension.input.ParserContext;
 import com.sk89q.worldedit.extension.platform.Actor;
 import com.sk89q.worldedit.internal.registry.InputParser;
 import com.sk89q.worldedit.world.World;
+import com.sk89q.worldedit.world.registry.BlockRegistry;
+import com.sk89q.worldedit.world.registry.BlockRegistryNameResolver;
 
 /**
  * Parses block input strings.
@@ -57,6 +59,15 @@ class DefaultBlockParser extends InputParser<BaseBlock> {
     @Override
     public BaseBlock parseFromInput(String input, ParserContext context) throws InputParseException {
         // TODO: Rewrite this entire method to use BaseBlocks and ignore BlockType, as well as to properly handle mod:name IDs
+
+        String originalInput = input;
+        String registryInput = input.replace(";", "|");
+        String[] registryAndExtraData = registryInput.split("\\|");
+        String[] registryLocator = registryAndExtraData[0].split(":", 3);
+        String registryName = registryLocator.length >= 2
+                ? registryLocator[0] + ":" + registryLocator[1]
+                : null;
+        Integer registryBlockId = resolveRegistryName(context, registryName);
 
         BlockType blockType;
         input = input.replace("_", " ");
@@ -111,23 +122,32 @@ class DefaultBlockParser extends InputParser<BaseBlock> {
         } else {
             // Attempt to parse the item ID or otherwise resolve an item/block
             // name to its numeric ID
-            try {
-                blockId = Integer.parseInt(testId);
+            if (registryBlockId != null) {
+                blockId = registryBlockId;
                 blockType = BlockType.fromID(blockId);
-            } catch (NumberFormatException e) {
-                blockType = BlockType.lookup(testId);
-                if (blockType == null) {
-                    int t = worldEdit.getServer().resolveItem(testId);
-                    if (t > 0) {
-                        blockType = BlockType.fromID(t); // Could be null
-                        blockId = t;
-                    } else if (blockLocator.length == 2) { // Block IDs in MC 1.7 and above use mod:name
-                        t = worldEdit.getServer().resolveItem(blockAndExtraData[0]);
+                typeAndData = registryLocator.length == 3
+                        ? new String[] { registryName, registryLocator[2] }
+                        : new String[] { registryName };
+                testId = registryName;
+            } else {
+                try {
+                    blockId = Integer.parseInt(testId);
+                    blockType = BlockType.fromID(blockId);
+                } catch (NumberFormatException e) {
+                    blockType = BlockType.lookup(testId);
+                    if (blockType == null) {
+                        int t = worldEdit.getServer().resolveItem(testId);
                         if (t > 0) {
                             blockType = BlockType.fromID(t); // Could be null
                             blockId = t;
-                            typeAndData = new String[] { blockAndExtraData[0] };
-                            testId = blockAndExtraData[0];
+                        } else if (blockLocator.length == 2) { // Block IDs in MC 1.7 and above use mod:name
+                            t = worldEdit.getServer().resolveItem(blockAndExtraData[0]);
+                            if (t > 0) {
+                                blockType = BlockType.fromID(t); // Could be null
+                                blockId = t;
+                                typeAndData = new String[] { blockAndExtraData[0] };
+                                testId = blockAndExtraData[0];
+                            }
                         }
                     }
                 }
@@ -137,7 +157,7 @@ class DefaultBlockParser extends InputParser<BaseBlock> {
                 // Maybe it's a cloth
                 ClothColor col = ClothColor.lookup(testId);
                 if (col == null) {
-                    throw new NoMatchException("Can't figure out what block '" + input + "' refers to");
+                    throw new NoMatchException("Can't figure out what block '" + originalInput + "' refers to");
                 }
 
                 blockType = BlockType.CLOTH;
@@ -153,7 +173,7 @@ class DefaultBlockParser extends InputParser<BaseBlock> {
             }
 
             if (!context.requireWorld().isValidBlockType(blockId)) {
-                throw new NoMatchException("Does not match a valid block type: '" + input + "'");
+                throw new NoMatchException("Does not match a valid block type: '" + originalInput + "'");
             }
         }
 
@@ -242,7 +262,7 @@ class DefaultBlockParser extends InputParser<BaseBlock> {
         Actor actor = context.requireActor();
         if (context.isRestricted() && actor != null && !actor.hasPermission("worldedit.anyblock")
                 && worldEdit.getConfiguration().disallowedBlocks.contains(blockId)) {
-            throw new DisallowedUsageException("You are not allowed to use '" + input + "'");
+            throw new DisallowedUsageException("You are not allowed to use '" + originalInput + "'");
         }
 
         if (blockType == null) {
@@ -330,6 +350,19 @@ class DefaultBlockParser extends InputParser<BaseBlock> {
             default:
                 return new BaseBlock(blockId, data);
         }
+    }
+
+    private static Integer resolveRegistryName(ParserContext context, String registryName) throws InputParseException {
+        if (registryName == null || registryName.isEmpty()) {
+            return null;
+        }
+
+        BlockRegistry registry = context.requireWorld().getWorldData().getBlockRegistry();
+        if (!(registry instanceof BlockRegistryNameResolver)) {
+            return null;
+        }
+
+        return ((BlockRegistryNameResolver) registry).getBlockId(registryName);
     }
 
 }
