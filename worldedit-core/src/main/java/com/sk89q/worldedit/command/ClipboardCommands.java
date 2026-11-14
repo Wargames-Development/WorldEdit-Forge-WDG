@@ -130,7 +130,7 @@ public class ClipboardCommands {
     }
 
     @Command(
-        aliases = { "paste", "/paste", "wdgpaste" },
+        aliases = { "/paste", "paste", "wdgpaste" },
         usage = "",
         flags = "sao",
         desc = "Paste the clipboard's contents",

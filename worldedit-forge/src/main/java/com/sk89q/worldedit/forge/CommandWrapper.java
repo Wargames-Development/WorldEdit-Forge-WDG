@@ -33,10 +33,18 @@ import java.util.Arrays;
 import java.util.List;
 
 public class CommandWrapper extends CommandBase {
-    private CommandMapping command;
+    private final CommandMapping command;
 
     protected CommandWrapper(CommandMapping command) {
         this.command = command;
+    }
+
+    static String getWorldEditCommandLine(ICommand nativeCommand, String[] arguments) {
+        if (!(nativeCommand instanceof CommandWrapper)) {
+            return null;
+        }
+        String name = nativeCommand.getCommandName();
+        return arguments.length == 0 ? name : name + " " + Joiner.on(" ").join(arguments);
     }
 
     @Override

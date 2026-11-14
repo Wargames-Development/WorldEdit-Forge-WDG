@@ -19,7 +19,6 @@
 
 package com.sk89q.worldedit.forge;
 
-import com.google.common.base.Joiner;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.WorldVector;
@@ -139,11 +138,10 @@ public class ForgeWorldEdit {
     public void onCommandEvent(CommandEvent event) {
         if ((event.sender instanceof EntityPlayerMP)) {
             if (((EntityPlayerMP) event.sender).worldObj.isRemote) return;
-            String[] split = new String[event.parameters.length + 1];
-            System.arraycopy(event.parameters, 0, split, 1, event.parameters.length);
-            split[0] = event.command.getCommandName();
+            String commandLine = CommandWrapper.getWorldEditCommandLine(event.command, event.parameters);
+            if (commandLine == null) return;
             com.sk89q.worldedit.event.platform.CommandEvent weEvent =
-                    new com.sk89q.worldedit.event.platform.CommandEvent(wrap((EntityPlayerMP) event.sender), Joiner.on(" ").join(split));
+                    new com.sk89q.worldedit.event.platform.CommandEvent(wrap((EntityPlayerMP) event.sender), commandLine);
             WorldEdit.getInstance().getEventBus().post(weEvent);
         }
     }

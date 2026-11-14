@@ -157,6 +157,7 @@ class ForgePlatform extends AbstractPlatform implements MultiUserPlatform {
                 }
             }
         }
+        CrucibleCommandBridge.install(mcMan);
     }
 
     @Override

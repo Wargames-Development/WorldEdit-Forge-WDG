@@ -36,7 +36,7 @@ import static org.mockito.Mockito.mock;
 
 public class ForgePasteRoutingTest {
     @Test
-    public void exposesSlashlessPasteAndForwardsEveryAliasToSameCommand() throws Exception {
+    public void preservesPasteCompatibilityAliasesWithDoubleSlashCanonicalName() throws Exception {
         WorldEdit worldEdit = mock(WorldEdit.class);
         ParametricBuilder builder = new ParametricBuilder();
         builder.addBinding(new WorldEditBinding(worldEdit));
@@ -47,7 +47,7 @@ public class ForgePasteRoutingTest {
         assertSame(paste, dispatcher.get("wdgpaste"));
         assertTrue(paste.getDescription().getPermissions().contains("worldedit.clipboard.paste"));
         CommandWrapper wrapper = new CommandWrapper(paste);
-        assertEquals("paste", wrapper.getCommandName());
+        assertEquals("/paste", wrapper.getCommandName());
         assertTrue(wrapper.getCommandAliases().containsAll(Arrays.asList("paste", "/paste", "wdgpaste")));
         assertSame(paste, dispatcher.get(wrapper.getCommandName()));
     }

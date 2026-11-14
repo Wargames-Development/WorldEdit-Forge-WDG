@@ -238,3 +238,40 @@ build.dependsOn verifyProcessedResources
 tasks.matching { it.name == 'reobfShadowJar' }.all { reobfTask ->
     build.dependsOn reobfTask
 }
+
+// Optional read-only integration fixture from a user's Crucible distribution.
+// The remapped jar is test-only and is never included in release artifacts.
+if (project.hasProperty('crucibleTestJar')) {
+    File fixtureJar = file("${buildDir}/crucible-command-test/crucible-mcp.jar")
+    task prepareCrucibleCommandFixture {
+        inputs.file file(project.property('crucibleTestJar'))
+        outputs.file fixtureJar
+        doLast {
+            File forgeCache = new File(gradle.gradleUserHomeDir,
+                    'caches/minecraft/net/minecraftforge/forge/' + rootProject.forgeGradleVersion)
+            File vanilla = new File(gradle.gradleUserHomeDir,
+                    'caches/minecraft/net/minecraft/minecraft_server/1.7.10/minecraft_server-1.7.10.jar')
+            def mapping = new net.md_5.specialsource.JarMapping()
+            mapping.loadMappings(new File(forgeCache, 'srgs/notch-mcp.srg'))
+            def input = net.md_5.specialsource.Jar.init([file(project.property('crucibleTestJar')), vanilla])
+            try {
+                mapping.setFallbackInheritanceProvider(new net.md_5.specialsource.provider.JarProvider(input))
+                fixtureJar.parentFile.mkdirs()
+                // Read just the distribution as output; vanilla supplies inheritance only.
+                def distribution = net.md_5.specialsource.Jar.init(file(project.property('crucibleTestJar')))
+                try {
+                    new net.md_5.specialsource.JarRemapper(mapping).remapJar(distribution, fixtureJar)
+                } finally {
+                    distribution.close()
+                }
+            } finally {
+                input.close()
+            }
+        }
+    }
+    dependencies { testRuntime files(fixtureJar) }
+    test {
+        dependsOn prepareCrucibleCommandFixture
+        systemProperty 'worldedit.crucibleFixture', 'true'
+    }
+}

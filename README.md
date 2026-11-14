@@ -49,6 +49,32 @@ WorldEdit-Forge-WDG provides server-side tab completion for active Forge block r
 
 Suggestions come from the active integrated or dedicated server block registry, so modded blocks work generically without hard-coded mod lists. Matching is ASCII case-insensitive while returned names preserve their canonical registry spelling, including underscores. Results are prefix-filtered, deterministic, permission-aware, and capped at 100 entries to remain safe on large modpacks. An empty block argument intentionally does not enumerate the registry. Numeric IDs, legacy aliases, metadata, and existing pattern syntax remain valid and unchanged. After a complete block reference, a metadata prefix such as `minecraft:wool:1<Tab>` or `wool:<Tab>` offers matching values from 0 through 15 without replacing the block name.
 
+## Crucible double-slash commands
+
+The Forge mod includes a WorldEdit-side bridge for Crucible's Bukkit command dispatch.
+Crucible's mod-command route strips a second leading slash, turning `//copy` into the
+native lookup `copy` instead of `/copy`. At command registration, WorldEdit replaces
+only its own slash-command wrappers with Crucible's existing direct native wrapper.
+The bridge supplies the transport slash explicitly when entering the native dispatcher.
+
+Use the usual `//copy`, `//paste`, `//set`, `//undo`, and other WorldEdit commands,
+including bare `//`. No WorldEdit entries are required in `commands.yml`; existing
+unrelated aliases such as a `gamemode` override can stay in place. This does not add
+plain `/copy` or `/set` aliases. The earlier `/paste` and `/wdgpaste` compatibility
+names remain available.
+
+Bukkit permissions, Forge command events, WorldEdit permissions, arguments, and tab
+completion retain their normal routes. The bridge leaves other mods' and plugins'
+command entries alone and does not load Bukkit APIs on ordinary Forge. Startup logs
+report `Installed Crucible slash-command bridge for ... WorldEdit commands` when the
+bridge is installed, or a warning if the expected Crucible API is unavailable.
+
+Install the new `-dist.jar` in place of the previous WorldEdit mod and restart the
+server. In-game verification should include `//wand`, `//pos1`, `//pos2`, `//copy`,
+`//paste`, `//undo`, `//redo`, bare `//`, and registry-name tab completion. Test edits
+in a small selection first. Automated integration tests exercise the supplied Crucible
+Bukkit classes without starting a game server; they do not replace that in-game check.
+
 ## Versioning
 
 WDG builds use the existing WorldEdit 6.1.2 line with an `_X` build suffix, for example `6.1.2_X1`. A branch label can be added for local builds with `-Pbranch=dev`, producing a version such as `6.1.2_X1-dev`.

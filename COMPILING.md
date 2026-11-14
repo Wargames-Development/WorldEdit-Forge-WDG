@@ -70,6 +70,24 @@ A successful release-producing build increments the committed `modBuildNumber` o
 
 Running `shadowJar` directly is a release-producing invocation and therefore advances the build number once when it succeeds. Tests, `verifyRepository`, setup, IDE generation, `runClient`, and `runServer` do not increment it.
 
+## Crucible command bridge integration test
+
+To test against an existing Crucible distribution without modifying it or starting a
+server, supply its absolute path:
+
+```bash
+./gradlew :worldedit-forge:test -PcrucibleTestJar=/absolute/path/to/Crucible-server.jar
+```
+
+The build remaps a test-only copy into `worldedit-forge/build/crucible-command-test/`.
+The test exercises Crucible's actual Bukkit command-map and native-wrapper classes,
+all WorldEdit slash aliases and namespaced forms, command collisions, and Bukkit
+permission denial. The input jar and its classes are never included in the release
+artifact. Without this property, the binary integration test is skipped; the normal
+command routing tests still run.
+
+Validated with `Crucible-1.7.10-staging-667a28e-dev-280-server.jar`.
+
 ## Output files
 
 Core/API artifacts are written to:
