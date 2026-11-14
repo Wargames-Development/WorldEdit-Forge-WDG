@@ -127,7 +127,7 @@ public class SchematicCommands {
             reportWdgDiagnostics(player, reader);
 
             log.info(player.getName() + " loaded " + f.getCanonicalPath());
-            player.print(filename + " loaded. Paste it with //paste");
+            player.print(filename + " loaded. Paste it with /paste (or /wdgpaste)");
         } catch (IOException e) {
             player.printError("Schematic could not read or it does not exist: " + e.getMessage());
             log.log(Level.WARNING, "Failed to load a saved clipboard", e);
@@ -301,20 +301,24 @@ public class SchematicCommands {
     @Command(
             aliases = {"list", "all", "ls"},
             desc = "List saved schematics",
+            usage = "[page]",
             min = 0,
             max = 1,
             flags = "dnp",
             help = "List all schematics in the schematics directory\n" +
                     " -d sorts by date, oldest first\n" +
                     " -n sorts by date, newest first\n" +
-                    " -p <page> prints the requested page\n"
+                    " [page] prints the requested page (default 1)\n" +
+                    " -p <page> overrides the positional page\n"
     )
     @CommandPermissions("worldedit.schematic.list")
-    public void list(Actor actor, CommandContext args, @Switch('p') @Optional("1") int page) throws WorldEditException {
+    public void list(Actor actor, @Optional("1") int requestedPage, CommandContext args,
+                     @Switch('p') @Optional("1") int flagPage) throws WorldEditException {
+        int page = args.hasFlag('p') ? flagPage : requestedPage;
         File dir = worldEdit.getWorkingDirectoryFile(worldEdit.getConfiguration().saveDir);
         List<File> fileList = allFiles(dir);
 
-        if (fileList.isEmpty()) {
+        if (fileList == null || fileList.isEmpty()) {
             actor.printError("No schematics found.");
             return;
         }
@@ -322,7 +326,7 @@ public class SchematicCommands {
         File[] files = new File[fileList.size()];
         fileList.toArray(files);
 
-        int pageCount = files.length / SCHEMATICS_PER_PAGE + 1;
+        int pageCount = (files.length + SCHEMATICS_PER_PAGE - 1) / SCHEMATICS_PER_PAGE;
         if (page < 1) {
             actor.printError("Page must be at least 1");
             return;

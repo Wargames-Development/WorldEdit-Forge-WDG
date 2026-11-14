@@ -129,6 +129,14 @@ public class ForgeWorld extends AbstractWorld {
         }
     }
 
+    /**
+     * Use the active world's storage height, including EFR extended-height worlds.
+     */
+    @Override
+    public Vector getMaximumPoint() {
+        return new Vector(30000000, getWorld().getHeight() - 1, 30000000);
+    }
+
     @Override
     public String getName() {
         return getWorld().getWorldInfo().getWorldName();

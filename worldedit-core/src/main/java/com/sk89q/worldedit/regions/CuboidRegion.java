@@ -37,6 +37,7 @@ public class CuboidRegion extends AbstractRegion implements FlatRegion {
 
     private Vector pos1;
     private Vector pos2;
+    private final boolean clampToWorld;
 
     /**
      * Construct a new instance of this cuboid using two corners of the cuboid.
@@ -64,7 +65,21 @@ public class CuboidRegion extends AbstractRegion implements FlatRegion {
      * @param pos2  the second position
      */
     public CuboidRegion(World world, Vector pos1, Vector pos2) {
+        this(world, pos1, pos2, true);
+    }
+
+    /**
+     * Construct a cuboid with optional world-height clamping.
+     * Clipboard coordinates are independent of the destination world's bounds.
+     *
+     * @param world the world, or null for a detached region
+     * @param pos1 the first position
+     * @param pos2 the second position
+     * @param clampToWorld whether to constrain Y to world bounds
+     */
+    public CuboidRegion(World world, Vector pos1, Vector pos2, boolean clampToWorld) {
         super(world);
+        this.clampToWorld = clampToWorld;
         checkNotNull(pos1);
         checkNotNull(pos2);
         this.pos1 = pos1;
@@ -112,6 +127,9 @@ public class CuboidRegion extends AbstractRegion implements FlatRegion {
      * Clamps the cuboid according to boundaries of the world.
      */
     private void recalculate() {
+        if (!clampToWorld) {
+            return;
+        }
         pos1 = pos1.clampY(0, world == null ? 255 : world.getMaxY());
         pos2 = pos2.clampY(0, world == null ? 255 : world.getMaxY());
     }

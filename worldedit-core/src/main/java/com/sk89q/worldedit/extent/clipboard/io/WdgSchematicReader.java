@@ -217,7 +217,7 @@ public class WdgSchematicReader implements ClipboardReader {
         Vector minimum = new Vector(minimumX, minimumY, minimumZ);
         Vector maximum = minimum.add(width, height, length).subtract(Vector.ONE);
         Vector origin = minimum.subtract(offsetX, offsetY, offsetZ);
-        Region region = new CuboidRegion(minimum, maximum);
+        Region region = new CuboidRegion(null, minimum, maximum, false);
         BlockArrayClipboard clipboard = new BlockArrayClipboard(region);
         clipboard.setOrigin(origin);
 

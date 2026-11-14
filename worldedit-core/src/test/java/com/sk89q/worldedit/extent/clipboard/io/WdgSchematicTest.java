@@ -537,6 +537,92 @@ public class WdgSchematicTest {
         return new ListTag(FloatTag.class, values);
     }
 
+    @Test
+    public void testDetachedCoordinatesBelowZeroAndAboveLegacyCeiling() throws Exception {
+        for (int minimumY : new int[] {-34, -11, 250, 384, 500}) {
+            CompoundTag original = readRoot(writeClipboard(createSimpleClipboard(), sourceWorldData()));
+            Map<String, Tag> values = new LinkedHashMap<String, Tag>(original.getValue());
+            values.put("WEOriginY", new IntTag(minimumY));
+            values.put("WEOffsetY", new IntTag(-38));
+            values.put("Height", new IntTag(20));
+            int[] indexes = new int[40];
+            byte[] metadata = new byte[40];
+            Arrays.fill(indexes, 1);
+            values.put("Blocks", new IntArrayTag(indexes));
+            values.put("Data", new ByteArrayTag(metadata));
+            Clipboard loaded = readClipboard(writeNamedCompound(WdgSchematicFormat.ROOT_NAME, values),
+                    sourceWorldData());
+            assertEquals(minimumY, loaded.getMinimumPoint().getBlockY());
+            assertEquals(minimumY + 19, loaded.getMaximumPoint().getBlockY());
+            assertEquals(minimumY + 38, loaded.getOrigin().getBlockY());
+            for (int y = minimumY; y <= minimumY + 19; y++) {
+                assertEquals(1, loaded.getBlock(loaded.getMinimumPoint().setY(y)).getId());
+            }
+            Clipboard roundTrip = readClipboard(writeClipboard(loaded, sourceWorldData()), sourceWorldData());
+            assertEquals(loaded.getMinimumPoint(), roundTrip.getMinimumPoint());
+            assertEquals(loaded.getMaximumPoint(), roundTrip.getMaximumPoint());
+            assertEquals(loaded.getOrigin(), roundTrip.getOrigin());
+        }
+    }
+
+    @Test
+    public void testConvertedSchematicsLoadEveryBlockAndTile() throws Exception {
+        java.util.Properties ids = new java.util.Properties();
+        java.io.InputStream registryInput = getClass().getResourceAsStream("/wdg-regression/registry.properties");
+        assertNotNull(registryInput);
+        try {
+            ids.load(registryInput);
+        } finally {
+            registryInput.close();
+        }
+        TestRegistry registry = new TestRegistry();
+        for (String name : ids.stringPropertyNames()) {
+            registry.register(Integer.parseInt(ids.getProperty(name)), name);
+        }
+        WorldData worldData = new TestWorldData(registry);
+        for (String name : new String[] {"bunker-e930", "u-72", "has"}) {
+            java.io.InputStream input = getClass().getResourceAsStream(
+                    "/wdg-regression/" + name + "-1.7.10.wdgschem");
+            assertNotNull(input);
+            byte[] bytes;
+            try {
+                bytes = com.google.common.io.ByteStreams.toByteArray(input);
+            } finally {
+                input.close();
+            }
+            CompoundTag root = readRoot(bytes);
+            WdgSchematicReader reader = newReader(bytes);
+            Clipboard loaded = reader.read(worldData);
+            assertTrue(reader.getMissingBlockRegistryNames().isEmpty());
+            List<String> palette = readPalette(root);
+            int[] blocks = root.getIntArray("Blocks");
+            byte[] metadata = root.getByteArray("Data");
+            int width = root.getInt("Width");
+            int height = root.getInt("Height");
+            int length = root.getInt("Length");
+            Vector minimum = new Vector(root.getInt("WEOriginX"), root.getInt("WEOriginY"), root.getInt("WEOriginZ"));
+            assertEquals(minimum, loaded.getMinimumPoint());
+            assertEquals(minimum.add(width - 1, height - 1, length - 1), loaded.getMaximumPoint());
+            assertEquals(minimum.subtract(root.getInt("WEOffsetX"), root.getInt("WEOffsetY"),
+                    root.getInt("WEOffsetZ")), loaded.getOrigin());
+            int tiles = 0;
+            for (int y = 0; y < height; y++) {
+                for (int z = 0; z < length; z++) {
+                    for (int x = 0; x < width; x++) {
+                        int index = y * width * length + z * width + x;
+                        BaseBlock block = loaded.getBlock(minimum.add(x, y, z));
+                        assertEquals(registry.getBlockId(palette.get(blocks[index])).intValue(), block.getId());
+                        assertEquals(metadata[index] & 255, block.getData());
+                        if (block.getNbtData() != null) {
+                            tiles++;
+                        }
+                    }
+                }
+            }
+            assertEquals(root.getListTag("TileEntities").getValue().size(), tiles);
+        }
+    }
+
     private BlockArrayClipboard createSimpleClipboard() throws Exception {
         Vector minimum = new Vector(2, 3, 4);
         BlockArrayClipboard clipboard = new BlockArrayClipboard(
